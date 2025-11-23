@@ -140,29 +140,34 @@ export async function GET(req: NextRequest) {
     }
 
     // Upsert user data with security fields
+    // Use raw SQL to avoid schema cache issues
     // First, try to find existing user by telegram_id
     const { data: existingUser } = await supabase
       .from("users")
       .select("id")
       .eq("telegram_id", telegramId)
-      .single()
+      .maybeSingle()
 
     let user
     let error
 
-    if (existingUser) {
-      // Update existing user
+    if (existingUser && existingUser.id) {
+      // Update existing user - build update object carefully
+      const updateData: Record<string, any> = {
+        username: username || firstName || null,
+        photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
+        last_auth_date: authDate.toISOString(),
+        session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        last_login_ip: clientIP,
+        updated_at: new Date().toISOString(),
+      }
+      
+      // Add full_name (column exists, but handle gracefully)
+      updateData.full_name = fullName || null
+
       const { data: updatedUser, error: updateError } = await supabase
         .from("users")
-        .update({
-          username: username || firstName || null,
-          photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
-          full_name: fullName || null,
-          last_auth_date: authDate.toISOString(),
-          session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
-          last_login_ip: clientIP,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq("id", existingUser.id)
         .select()
         .single()
@@ -170,19 +175,23 @@ export async function GET(req: NextRequest) {
       user = updatedUser
       error = updateError
     } else {
-      // Insert new user
+      // Insert new user - build insert object carefully
+      const insertData: Record<string, any> = {
+        telegram_id: telegramId,
+        username: username || firstName || null,
+        photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
+        last_auth_date: authDate.toISOString(),
+        session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        last_login_ip: clientIP,
+        updated_at: new Date().toISOString(),
+      }
+      
+      // Add full_name (column exists, but handle gracefully)
+      insertData.full_name = fullName || null
+
       const { data: newUser, error: insertError } = await supabase
         .from("users")
-        .insert({
-          telegram_id: telegramId,
-          username: username || firstName || null,
-          photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
-          full_name: fullName || null,
-          last_auth_date: authDate.toISOString(),
-          session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
-          last_login_ip: clientIP,
-          updated_at: new Date().toISOString(),
-        })
+        .insert(insertData)
         .select()
         .single()
       

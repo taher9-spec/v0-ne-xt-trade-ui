@@ -210,6 +210,23 @@ export default function NextTradeUI() {
       }
     }
     checkAuth()
+    
+    // Check for auth success/failure in URL params and refresh
+    const urlParams = new URLSearchParams(window.location.search)
+    const authStatus = urlParams.get("auth")
+    if (authStatus === "success") {
+      // Refresh user data after successful login
+      setTimeout(() => {
+        checkAuth()
+        // Clean URL
+        window.history.replaceState({}, "", window.location.pathname)
+      }, 500)
+    } else if (authStatus === "failed") {
+      const reason = urlParams.get("reason")
+      console.error("[v0] Auth failed:", reason)
+      // Clean URL
+      window.history.replaceState({}, "", window.location.pathname)
+    }
   }, [])
 
   // Refresh user when account tab is opened (in case they just logged in)

@@ -249,7 +249,7 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          ...history.map((m) => ({ role: m.role, content: m.content })),
+          ...(history.length > 0 ? history.map((m) => ({ role: m.role, content: m.content })) : [{ role: "user" as const, content: body.message }]),
         ],
         temperature: 0.7,
         max_tokens: 500,
@@ -367,4 +367,3 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
     }, { status: 500 })
   }
 }
-

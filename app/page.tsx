@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, User, Crown } from "lucide-react"
+import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { getRealTimeQuotes, getHistoricalData } from "./actions"
 import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts"
+import { TelegramLoginButton } from "@/components/TelegramLoginButton"
+import { LogOut, Check } from "lucide-react"
 
 type Signal = {
   id: string
@@ -51,6 +53,14 @@ type Plan = {
   sort_order: number
 }
 
+type AuthUser = {
+  username: string
+  photo_url: string
+  plan_code: string
+  approx_balance: number
+  risk_percent: number
+}
+
 export default function NextTradeUI() {
   const [activeTab, setActiveTab] = useState("home")
   const [signals, setSignals] = useState<Signal[]>([])
@@ -60,6 +70,8 @@ export default function NextTradeUI() {
   const [loadingSignals, setLoadingSignals] = useState(true)
   const [loadingTrades, setLoadingTrades] = useState(false)
   const [loadingPlans, setLoadingPlans] = useState(false)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
 
   const [quotes, setQuotes] = useState<any[]>([])
   const [chartData, setChartData] = useState<any[]>([])
@@ -140,6 +152,22 @@ export default function NextTradeUI() {
       fetchPlans()
     }
   }, [activeTab])
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch("/api/me")
+        const json = await res.json()
+        console.log("[v0] Auth check:", json)
+        setUser(json.user)
+      } catch (err) {
+        console.error("[v0] Auth check failed", err)
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+    checkAuth()
+  }, [])
 
   const mainQuote = quotes.find((q) => q.symbol === selectedSymbol) || { price: 0, changesPercentage: 0 }
 
@@ -513,88 +541,180 @@ export default function NextTradeUI() {
     </div>
   )
 
-  const Account = () => (
-    <div className="space-y-6 pb-20">
-      <header className="pt-2">
-        <h1 className="text-xl font-bold">Account</h1>
-        <p className="text-xs text-zinc-500">Manage your subscription</p>
-      </header>
-
-      <Card className="p-4 bg-zinc-950 border-zinc-800">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-2xl font-bold">
-            T
-          </div>
-          <div>
-            <p className="font-bold">Trader User</p>
-            <p className="text-xs text-zinc-500">@trader_demo</p>
-          </div>
+  const Account = () => {
+    if (authLoading) {
+      return (
+        <div className="space-y-6 pb-20">
+          <header className="pt-2">
+            <h1 className="text-xl font-bold">Account</h1>
+            <p className="text-xs text-zinc-500">Loading...</p>
+          </header>
+          <Card className="p-6 bg-zinc-950 border-zinc-800 animate-pulse">
+            <div className="h-20 bg-zinc-900 rounded" />
+          </Card>
         </div>
-        <Separator className="my-4 bg-zinc-800" />
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-zinc-500">Current Plan</span>
-            <span className="font-semibold text-emerald-400">Pro</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-zinc-500">Balance</span>
-            <span className="font-semibold">$500.00</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-zinc-500">Risk per Trade</span>
-            <span className="font-semibold">1.0%</span>
-          </div>
-        </div>
-      </Card>
+      )
+    }
 
-      <section>
-        <h2 className="text-sm font-semibold text-zinc-400 mb-4">Upgrade Your Plan</h2>
-        {loadingPlans ? (
-          <div className="space-y-3">
-            {[1, 2].map((i) => (
-              <Card key={i} className="p-4 bg-zinc-950 border-zinc-800 animate-pulse">
-                <div className="h-24 bg-zinc-900 rounded" />
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {plans.map((plan) => (
-              <Card
-                key={plan.code}
-                className={`p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors ${
-                  plan.code === "elite" ? "border-amber-500/30" : ""
-                }`}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-base font-bold">{plan.name}</h3>
-                      {plan.code === "elite" && <Crown className="w-4 h-4 text-amber-500" />}
+    if (!user) {
+      return (
+        <div className="space-y-6 pb-20">
+          <header className="pt-2">
+            <h1 className="text-xl font-bold">Account</h1>
+            <p className="text-xs text-zinc-500">Sign in to continue</p>
+          </header>
+
+          <Card className="p-6 bg-zinc-950 border-zinc-800">
+            <TelegramLoginButton />
+          </Card>
+
+          <section>
+            <h2 className="text-sm font-semibold text-zinc-400 mb-4">Subscription Plans</h2>
+            {loadingPlans ? (
+              <div className="space-y-3">
+                {[1, 2].map((i) => (
+                  <Card key={i} className="p-4 bg-zinc-950 border-zinc-800 animate-pulse">
+                    <div className="h-24 bg-zinc-900 rounded" />
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {plans.map((plan) => (
+                  <Card key={plan.code} className="p-4 bg-zinc-950 border-zinc-800">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-base font-bold">{plan.name}</h3>
+                          {plan.code === "elite" && <Crown className="w-4 h-4 text-amber-500" />}
+                        </div>
+                        <p className="text-xs text-zinc-500">{plan.description}</p>
+                      </div>
+                      <p className="text-xl font-bold">
+                        ${plan.price_usd}
+                        <span className="text-xs text-zinc-500 font-normal">/mo</span>
+                      </p>
                     </div>
-                    <p className="text-xs text-zinc-500">{plan.description}</p>
-                  </div>
-                  <p className="text-xl font-bold">
-                    ${plan.price_usd}
-                    <span className="text-xs text-zinc-500 font-normal">/mo</span>
-                  </p>
-                </div>
-                <Button
-                  className={`w-full h-9 mt-3 ${
-                    plan.code === "elite"
-                      ? "bg-gradient-to-r from-amber-500 to-orange-500 text-black hover:from-amber-600 hover:to-orange-600"
-                      : "bg-zinc-800 hover:bg-zinc-700 text-white"
-                  }`}
-                >
-                  {plan.code === "pro" ? "Current Plan" : "Upgrade"}
-                </Button>
-              </Card>
-            ))}
+                    <Button className="w-full h-9 mt-3 bg-zinc-800 hover:bg-zinc-700 text-white" disabled>
+                      Sign in to subscribe
+                    </Button>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-6 pb-20">
+        <header className="flex justify-between items-center pt-2">
+          <div>
+            <h1 className="text-xl font-bold">Account</h1>
+            <p className="text-xs text-zinc-500">Manage your subscription</p>
           </div>
-        )}
-      </section>
-    </div>
-  )
+          <button
+            onClick={() => {
+              document.cookie = "tg_user_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+              window.location.reload()
+            }}
+            className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </header>
+
+        <Card className="p-4 bg-zinc-950 border-zinc-800">
+          <div className="flex items-center gap-3 mb-4">
+            {user.photo_url ? (
+              <img
+                src={user.photo_url || "/placeholder.svg"}
+                alt={user.username || "User"}
+                className="w-14 h-14 rounded-full border-2 border-zinc-800 object-cover"
+              />
+            ) : (
+              <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center text-xl font-bold">
+                {user.username?.[0]?.toUpperCase() || "T"}
+              </div>
+            )}
+            <div className="flex-1">
+              <p className="font-bold">{user.username || "Trader User"}</p>
+              <p className="text-xs text-zinc-500">@{user.username || "trader"}</p>
+            </div>
+            <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+              <Check className="w-4 h-4 text-black font-bold" />
+            </div>
+          </div>
+          <Separator className="my-4 bg-zinc-800" />
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Current Plan</span>
+              <span className="font-semibold text-emerald-400 uppercase">{user.plan_code || "Free"}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Balance</span>
+              <span className="font-semibold">${(user.approx_balance || 0).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-zinc-500">Risk per Trade</span>
+              <span className="font-semibold">{user.risk_percent || 1.0}%</span>
+            </div>
+          </div>
+        </Card>
+
+        <section>
+          <h2 className="text-sm font-semibold text-zinc-400 mb-4">Upgrade Your Plan</h2>
+          {loadingPlans ? (
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <Card key={i} className="p-4 bg-zinc-950 border-zinc-800 animate-pulse">
+                  <div className="h-24 bg-zinc-900 rounded" />
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {plans.map((plan) => (
+                <Card
+                  key={plan.code}
+                  className={`p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors ${
+                    plan.code === "elite" ? "border-amber-500/30" : ""
+                  } ${user.plan_code === plan.code ? "border-emerald-500/30 bg-emerald-500/5" : ""}`}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold">{plan.name}</h3>
+                        {plan.code === "elite" && <Crown className="w-4 h-4 text-amber-500" />}
+                      </div>
+                      <p className="text-xs text-zinc-500">{plan.description}</p>
+                    </div>
+                    <p className="text-xl font-bold">
+                      ${plan.price_usd}
+                      <span className="text-xs text-zinc-500 font-normal">/mo</span>
+                    </p>
+                  </div>
+                  <Button
+                    className={`w-full h-9 mt-3 ${
+                      user.plan_code === plan.code
+                        ? "bg-emerald-500/20 text-emerald-400 cursor-default border border-emerald-500/30"
+                        : plan.code === "elite"
+                          ? "bg-gradient-to-r from-amber-500 to-orange-500 text-black hover:from-amber-600 hover:to-orange-600"
+                          : "bg-zinc-800 hover:bg-zinc-700 text-white"
+                    }`}
+                    disabled={user.plan_code === plan.code}
+                  >
+                    {user.plan_code === plan.code ? "Current Plan" : "Upgrade"}
+                  </Button>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-purple-500/30">
@@ -655,7 +775,7 @@ export default function NextTradeUI() {
                   activeTab === "account" ? "text-emerald-400" : "text-zinc-500"
                 }`}
               >
-                <User className="w-5 h-5" />
+                <UserIcon className="w-5 h-5" />
                 <span className="text-[10px] font-medium">Account</span>
               </button>
             </div>

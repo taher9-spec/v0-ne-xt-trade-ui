@@ -145,12 +145,13 @@ export async function POST(request: NextRequest) {
               .select("id")
               .single()
           
-          if (!convError && newConversation) {
-            conversationId = newConversation.id
-            console.log("[v0] Created conversation:", conversationId)
-          } else {
-            console.error("[v0] Failed to create conversation:", convError)
-            // Continue without conversation storage - AI can still work
+            if (!convError && newConversation) {
+              conversationId = newConversation.id
+              console.log("[v0] Created conversation:", conversationId)
+            } else {
+              console.error("[v0] Failed to create conversation:", convError)
+              // Continue without conversation storage - AI can still work
+            }
           }
         } catch (dbError: any) {
           console.error("[v0] Database error creating conversation:", dbError)
@@ -262,7 +263,17 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
 
       console.log("[v0] Calling OpenAI API with model: gpt-4o-mini")
     
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      // Build messages array: system prompt + history (which includes current user message if stored)
+      // If history is empty, add current message manually
+      const openaiMessages = [
+        { role: "system", content: systemPrompt },
+        ...(history.length > 0 
+          ? history.map((m) => ({ role: m.role, content: m.content }))
+          : [{ role: "user" as const, content: body.message }]
+        ),
+      ]
+
+      const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -270,10 +281,7 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...(history.length > 0 ? history.map((m) => ({ role: m.role, content: m.content })) : [{ role: "user" as const, content: body.message }]),
-        ],
+        messages: openaiMessages,
         temperature: 0.7,
         max_tokens: 500,
       }),

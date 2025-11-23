@@ -109,32 +109,49 @@ export async function POST(request: NextRequest) {
       }
       
       // Handle conversation storage (for both authenticated and guest users)
+      // Gracefully handle schema cache issues - don't fail the entire request
       if (!conversationId) {
-        // Create new conversation
-        const { data: newConversation, error: convError } = await supabase
-          .from("conversations")
-          .insert({
-            user_id: userId || null, // null for guest users
-            title: body.message.slice(0, 50) || "New Conversation", // First 50 chars as title
-            signal_id: body.signalId || null,
-          })
-          .select()
-          .single()
-        
-        if (!convError && newConversation) {
-          conversationId = newConversation.id
-        } else {
-          console.error("[v0] Failed to create conversation:", convError)
+        try {
+          // Create new conversation
+          const { data: newConversation, error: convError } = await supabase
+            .from("conversations")
+            .insert({
+              user_id: userId || null, // null for guest users
+              title: body.message.slice(0, 50) || "New Conversation", // First 50 chars as title
+              signal_id: body.signalId || null,
+            })
+            .select()
+            .single()
+          
+          if (!convError && newConversation) {
+            conversationId = newConversation.id
+            console.log("[v0] Created conversation:", conversationId)
+          } else {
+            console.error("[v0] Failed to create conversation:", convError)
+            // Continue without conversation storage - AI can still work
+          }
+        } catch (dbError: any) {
+          console.error("[v0] Database error creating conversation:", dbError)
+          // Continue without conversation storage - AI can still work
         }
       }
       
-      // Store user message
+      // Store user message (if conversation exists)
       if (conversationId) {
-        await supabase.from("messages").insert({
-          conversation_id: conversationId,
-          role: "user",
-          content: body.message,
-        })
+        try {
+          const { error: msgError } = await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            role: "user",
+            content: body.message,
+          })
+          if (msgError) {
+            console.error("[v0] Failed to store user message:", msgError)
+            // Continue - message storage is optional
+          }
+        } catch (dbError: any) {
+          console.error("[v0] Database error storing message:", dbError)
+          // Continue - message storage is optional
+        }
       }
     }
 

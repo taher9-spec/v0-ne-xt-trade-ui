@@ -102,12 +102,17 @@ export async function GET(req: NextRequest) {
     // Verify hash authenticity
     if (!verifyTelegramAuth(params)) {
       console.error("[v0] Invalid Telegram auth hash")
+      console.error("[v0] Request URL:", req.url)
+      console.error("[v0] Query params:", Object.fromEntries(req.nextUrl.searchParams))
+      console.error("[v0] Received params keys:", Object.keys(params))
       return NextResponse.redirect(new URL("/?auth=failed&reason=invalid_hash", req.url))
     }
 
     // Check auth_date to prevent replay attacks
     if (!isAuthDateValid(params.auth_date)) {
-      console.error("[v0] Auth date expired or invalid")
+      console.error("[v0] Auth date expired or invalid:", params.auth_date)
+      console.error("[v0] Request URL:", req.url)
+      console.error("[v0] Query params:", Object.fromEntries(req.nextUrl.searchParams))
       return NextResponse.redirect(new URL("/?auth=failed&reason=expired", req.url))
     }
 

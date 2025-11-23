@@ -251,13 +251,24 @@ export async function GET(req: NextRequest) {
     const res = NextResponse.redirect(redirectUrl)
     const cookieMaxAge = 60 * 60 * 24 * 365 // 1 year
     
+    // Set cookies with proper security settings
     res.cookies.set("tg_user_id", user.id, {
       httpOnly: true, // Prevent XSS attacks
       secure: process.env.NODE_ENV === "production", // HTTPS only in production
-      sameSite: "lax", // CSRF protection
+      sameSite: "lax", // CSRF protection - works with cross-domain redirects
       path: "/",
       maxAge: cookieMaxAge,
     })
+    
+    res.cookies.set("tg_username", user.username || "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: cookieMaxAge,
+    })
+    
+    console.log("[v0] Telegram auth successful - cookies set for user:", user.id, "IP:", clientIP)
 
     // Set security headers
     res.headers.set("X-Content-Type-Options", "nosniff")

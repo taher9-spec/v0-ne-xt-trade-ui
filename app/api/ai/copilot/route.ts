@@ -109,29 +109,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Handle conversation storage (for both authenticated and guest users)
-      let historyMessages: Array<{ role: "user" | "assistant"; content: string }> | null = null
-      
-      if (!conversationId && userId) {
-        // Try to find existing conversation for this user
-        try {
-          const { data: existing } = await supabase
-            .from("conversations")
-            .select("id")
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          
-          if (existing?.id) {
-            conversationId = existing.id
-            console.log("[v0] Found existing conversation:", conversationId)
-          }
-        } catch (dbError: any) {
-          console.error("[v0] Error finding existing conversation:", dbError)
-        }
-      }
-      
-      // Create new conversation if needed
+      // 1) Ensure conversation exists
       if (!conversationId) {
         try {
           const { data: newConversation, error: convError } = await supabase
@@ -141,7 +119,7 @@ export async function POST(request: NextRequest) {
               title: body.message.slice(0, 80) || "New Conversation",
               signal_id: body.signalId || null,
             })
-            .select()
+            .select("id")
             .single()
           
           if (!convError && newConversation) {
@@ -157,7 +135,7 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // Store user message (if conversation exists)
+      // 2) Store user message (if conversation exists)
       if (conversationId) {
         try {
           const { error: msgError } = await supabase.from("messages").insert({
@@ -170,25 +148,36 @@ export async function POST(request: NextRequest) {
             console.error("[v0] Failed to store user message:", msgError)
             // Continue - message storage is optional
           }
-          
-          // Load last 12 messages as history
-          const { data: history, error: historyErr } = await supabase
-            .from("messages")
-            .select("role, content")
-            .eq("conversation_id", conversationId)
-            .order("created_at", { ascending: true })
-            .limit(12)
-          
-          if (!historyErr && history) {
-            historyMessages = history.map((m) => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.content,
-            }))
-          }
         } catch (dbError: any) {
           console.error("[v0] Database error storing message:", dbError)
           // Continue - message storage is optional
         }
+      }
+    }
+    
+    // 3) Load conversation history from Supabase (if conversation exists)
+    let history: Array<{ role: "user" | "assistant"; content: string }> = []
+    
+    if (supabase && conversationId) {
+      try {
+        const { data: rows, error: historyError } = await supabase
+          .from("messages")
+          .select("role, content")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: true })
+          .limit(20)
+        
+        if (!historyError && rows) {
+          history = rows.map((r) => ({
+            role: r.role as "user" | "assistant",
+            content: r.content,
+          }))
+        } else if (historyError) {
+          console.error("[v0] Failed to load history:", historyError)
+        }
+      } catch (dbError: any) {
+        console.error("[v0] Database error loading history:", dbError)
+        // Continue without history - AI can still work
       }
     }
 
@@ -260,7 +249,7 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          ...(historyMessages ?? [{ role: "user" as const, content: body.message }]),
+          ...history.map((m) => ({ role: m.role, content: m.content })),
         ],
         temperature: 0.7,
         max_tokens: 500,

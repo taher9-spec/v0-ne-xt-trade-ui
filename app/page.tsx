@@ -769,7 +769,8 @@ export default function NextTradeUI() {
       }
     }
 
-    const handleClearChat = () => {
+    const handleClearChat = async () => {
+      // Reset UI immediately
       setMessages([
         {
           id: "welcome",
@@ -778,6 +779,9 @@ export default function NextTradeUI() {
         },
       ])
       setConversationId(null)
+      
+      // Optionally create a new conversation in the background
+      // (The next message will create one automatically, so this is optional)
     }
 
     return (
@@ -825,7 +829,15 @@ export default function NextTradeUI() {
                 </div>
                 {msg.role === "assistant" && (
                   <button
-                    onClick={() => navigator.clipboard.writeText(msg.content)}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(msg.content)
+                        // Optional: show a toast or feedback
+                        console.log("[v0] Copied to clipboard")
+                      } catch (err) {
+                        console.error("[v0] Failed to copy:", err)
+                      }
+                    }}
                     className="absolute -right-8 top-2 opacity-0 group-hover:opacity-100 text-[10px] text-zinc-400 hover:text-zinc-100 transition-opacity"
                     title="Copy"
                   >

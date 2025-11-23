@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabaseServer"
 import { cookies } from "next/headers"
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const cookieStore = await cookies()
     const userId = cookieStore.get("tg_user_id")?.value
@@ -44,7 +44,10 @@ export async function GET() {
       
       const quotePromises = uniqueSymbols.map(async (symbol) => {
         try {
-          const quoteRes = await fetch(`${req.nextUrl.origin}/api/quote?symbol=${symbol}`)
+          // Use internal API route for quotes
+          const quoteUrl = new URL("/api/quote", req.nextUrl.origin)
+          quoteUrl.searchParams.set("symbol", symbol)
+          const quoteRes = await fetch(quoteUrl.toString())
           if (quoteRes.ok) {
             const quote = await quoteRes.json()
             return { symbol, quote }

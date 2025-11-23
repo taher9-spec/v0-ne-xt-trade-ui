@@ -18,15 +18,26 @@ import { isTelegramWebApp, getTelegramInitData } from "@/lib/telegramWebApp"
 type Signal = {
   id: string
   symbol: string
+  symbol_id?: string | null
+  symbols?: {
+    fmp_symbol?: string
+    display_symbol?: string
+    name?: string
+    asset_class?: string
+  } | null
   direction: "long" | "short"
   type: "scalp" | "intraday" | "swing"
   market: string
+  timeframe?: string | null
   entry: number
   sl: number
   tp1: number | null
   tp2: number | null
+  tp3?: number | null
   confidence: number
   reason_summary: string | null
+  engine_version?: string | null
+  status?: string
   created_at: string
 }
 

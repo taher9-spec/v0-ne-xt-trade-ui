@@ -14,6 +14,7 @@ import { TelegramLoginButton } from "@/components/TelegramLoginButton"
 import { LogOut, Check } from "lucide-react"
 import Image from "next/image"
 import { isTelegramWebApp, getTelegramInitData } from "@/lib/telegramWebApp"
+import { Trade, TradeStats, formatNumber, parseNumber } from "@/types/trades"
 
 type Signal = {
   id: string
@@ -39,31 +40,6 @@ type Signal = {
   engine_version?: string | null
   status?: string
   created_at: string
-}
-
-type Trade = {
-  id: string
-  user_id: string
-  signal_id: string | null
-  symbol: string
-  symbol_id?: string | null
-  symbols?: {
-    fmp_symbol?: string
-    display_symbol?: string
-  } | null
-  direction: string
-  entry_price: number | null
-  exit_price: number | null
-  timeframe: string | null
-  result_r: number | null
-  pnl: number | null
-  pnl_percent?: number | null
-  floating_r?: number | null
-  floating_pnl_percent?: number | null
-  current_price?: number | null
-  status: string
-  opened_at: string
-  closed_at: string | null
 }
 
 type Plan = {
@@ -92,7 +68,7 @@ export default function NextTradeUI() {
   const [signals, setSignals] = useState<Signal[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
-  const [tradeStats, setTradeStats] = useState({ total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
+  const [tradeStats, setTradeStats] = useState<TradeStats>({ total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
   const [loadingSignals, setLoadingSignals] = useState(true)
   const [loadingTrades, setLoadingTrades] = useState(false)
   const [loadingPlans, setLoadingPlans] = useState(false)
@@ -576,15 +552,15 @@ export default function NextTradeUI() {
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div className="bg-zinc-900 p-2 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
-            <p className="text-sm font-bold">{signal.entry.toFixed(2)}</p>
+            <p className="text-sm font-bold">{formatNumber(signal.entry)}</p>
           </div>
           <div className="bg-zinc-900 p-2 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-0.5">Stop Loss</p>
-            <p className="text-sm font-bold text-rose-400">{signal.sl.toFixed(2)}</p>
+            <p className="text-sm font-bold text-rose-400">{formatNumber(signal.sl)}</p>
           </div>
           <div className="bg-zinc-900 p-2 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-0.5">Target</p>
-            <p className="text-sm font-bold text-emerald-400">{signal.tp1?.toFixed(2) || "TBD"}</p>
+            <p className="text-sm font-bold text-emerald-400">{signal.tp1 !== null && signal.tp1 !== undefined ? formatNumber(signal.tp1) : "TBD"}</p>
           </div>
         </div>
 
@@ -673,39 +649,41 @@ export default function NextTradeUI() {
                       </Badge>
                     </div>
                     <p className="text-xs text-zinc-500">
-                      Entry: {trade.entry_price?.toFixed(2) || "N/A"}
-                      {trade.exit_price && ` • Exit: ${trade.exit_price.toFixed(2)}`}
+                      Entry: {formatNumber(trade.entry_price, 2, "N/A")}
+                      {trade.exit_price !== null && trade.exit_price !== undefined && ` • Exit: ${formatNumber(trade.exit_price)}`}
                     </p>
                   </div>
                   {(trade.result_r !== null || trade.floating_r !== null) && (
                     <div className={`text-right ${(trade.result_r ?? trade.floating_r ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      {trade.status === "open" && trade.floating_r !== null ? (
+                      {trade.status === "open" && trade.floating_r !== null && trade.floating_r !== undefined ? (
                         <>
                           <p className="text-lg font-bold">
                             {trade.floating_r > 0 ? "+" : ""}
-                            {trade.floating_r.toFixed(2)}R
+                            {formatNumber(trade.floating_r)}R
                           </p>
-                          {trade.floating_pnl_percent !== null && (
+                          {trade.floating_pnl_percent !== null && trade.floating_pnl_percent !== undefined && (
                             <p className="text-xs">
                               {trade.floating_pnl_percent > 0 ? "+" : ""}
-                              {trade.floating_pnl_percent.toFixed(2)}%
+                              {formatNumber(trade.floating_pnl_percent)}%
                             </p>
                           )}
-                          {trade.current_price && (
-                            <p className="text-[10px] text-zinc-500 mt-1">${trade.current_price.toFixed(2)}</p>
+                          {trade.current_price !== null && trade.current_price !== undefined && (
+                            <p className="text-[10px] text-zinc-500 mt-1">${formatNumber(trade.current_price)}</p>
                           )}
                         </>
                       ) : (
                         <>
                           <p className="text-lg font-bold">
-                            {trade.result_r && trade.result_r > 0 ? "+" : ""}
-                            {trade.result_r?.toFixed(2) || "0.00"}R
+                            {trade.result_r !== null && trade.result_r !== undefined && trade.result_r > 0 ? "+" : ""}
+                            {formatNumber(trade.result_r, 2, "0.00")}R
                           </p>
-                          {trade.pnl && <p className="text-xs">${trade.pnl.toFixed(2)}</p>}
-                          {trade.pnl_percent !== null && (
+                          {trade.pnl !== null && trade.pnl !== undefined && (
+                            <p className="text-xs">${formatNumber(trade.pnl)}</p>
+                          )}
+                          {trade.pnl_percent !== null && trade.pnl_percent !== undefined && (
                             <p className="text-xs">
                               {trade.pnl_percent > 0 ? "+" : ""}
-                              {trade.pnl_percent.toFixed(2)}%
+                              {formatNumber(trade.pnl_percent)}%
                             </p>
                           )}
                         </>
@@ -740,31 +718,42 @@ export default function NextTradeUI() {
     const [loading, setLoading] = useState(false)
     const [conversationId, setConversationId] = useState<string | null>(null)
 
-    // Load latest conversation on mount
+    // Load latest conversation on mount (only for authenticated users)
     useEffect(() => {
+      if (!user) {
+        // Guest users start with welcome message only
+        return
+      }
+
       ;(async () => {
         try {
-          const res = await fetch("/api/ai/conversation/latest")
-          if (!res.ok) return
+          const res = await fetch("/api/ai/conversation/latest", { cache: "no-store" })
+          if (!res.ok) {
+            console.log("[v0] No existing conversation found")
+            return
+          }
           const data = await res.json()
           if (data.conversation) {
             setConversationId(data.conversation.id)
+            console.log("[v0] Loaded conversation:", data.conversation.id)
           }
           if (data.messages && data.messages.length > 0) {
+            // Replace welcome message with loaded messages
             setMessages(
               data.messages.map((m: any) => ({
-                id: m.id,
+                id: m.id || crypto.randomUUID(),
                 role: m.role,
                 content: m.content,
                 created_at: m.created_at,
               }))
             )
+            console.log("[v0] Loaded", data.messages.length, "messages from conversation")
           }
         } catch (e) {
           console.error("[v0] Load last conversation failed", e)
         }
       })()
-    }, [])
+    }, [user]) // Only reload when user changes
 
     const handleSend = async () => {
       if (!input.trim() || loading) return
@@ -836,8 +825,9 @@ export default function NextTradeUI() {
       ])
       setConversationId(null)
       
-      // Optionally create a new conversation in the background
-      // (The next message will create one automatically, so this is optional)
+      // For logged-in users, we'll create a new conversation on next message
+      // For guests, this is just a local reset
+      console.log("[v0] Chat cleared, new conversation will be created on next message")
     }
 
     return (

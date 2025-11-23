@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-
-const FMP_API_KEY = process.env.FMP_API_KEY
-const FMP_BASE_URL = "https://financialmodelingprep.com/api/v3"
+import { getFmpQuote } from "@/lib/fmp"
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,46 +10,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Symbol parameter is required" }, { status: 400 })
     }
 
-    if (!FMP_API_KEY) {
-      return NextResponse.json({ error: "FMP API key not configured" }, { status: 500 })
-    }
-
     // Fetch real-time quote from FMP
-    const quoteUrl = `${FMP_BASE_URL}/quote/${encodeURIComponent(symbol)}?apikey=${FMP_API_KEY}`
+    const quote = await getFmpQuote(symbol)
 
-    const response = await fetch(quoteUrl, {
-      headers: { "Accept": "application/json" },
-      next: { revalidate: 15 }, // Cache for 15 seconds
-    })
-
-    if (!response.ok) {
-      console.error(`[v0] FMP quote API error: ${response.status}`)
-      return NextResponse.json(
-        { error: `Failed to fetch quote: ${response.status}` },
-        { status: response.status }
-      )
-    }
-
-    const data = await response.json()
-
-    // FMP returns array for quote endpoint
-    if (!Array.isArray(data) || data.length === 0) {
+    if (!quote) {
       return NextResponse.json({ error: "Symbol not found" }, { status: 404 })
     }
 
-    const quote = data[0]
-
     // Normalize response
     const normalized = {
-      symbol: quote.symbol || symbol,
-      price: parseFloat(quote.price || quote.close || "0"),
-      change: parseFloat(quote.change || "0"),
-      changesPercentage: parseFloat(quote.changesPercentage || "0"),
-      dayHigh: parseFloat(quote.dayHigh || quote.high || "0"),
-      dayLow: parseFloat(quote.dayLow || quote.low || "0"),
-      previousClose: parseFloat(quote.previousClose || quote.close || "0"),
-      volume: parseFloat(quote.volume || "0"),
-      timestamp: quote.timestamp || new Date().toISOString(),
+      symbol: quote.symbol,
+      price: quote.price,
+      change: quote.change,
+      changesPercentage: quote.changesPercentage,
+      dayHigh: quote.dayHigh,
+      dayLow: quote.dayLow,
+      previousClose: quote.previousClose,
+      volume: quote.volume || 0,
+      timestamp: quote.timestamp ? new Date(quote.timestamp * 1000).toISOString() : new Date().toISOString(),
       exchange: quote.exchange || "",
     }
 

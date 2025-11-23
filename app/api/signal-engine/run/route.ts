@@ -12,11 +12,11 @@ export async function POST(req: NextRequest) {
     const providedSecret = authHeader?.replace("Bearer ", "") || secretParam
 
     if (!ADMIN_SECRET || providedSecret !== ADMIN_SECRET) {
-      console.error("[v0] Unauthorized signal generation attempt")
+      console.error("[v0] Unauthorized signal engine run attempt")
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    console.log("[v0] Running signal generation engine...")
+    console.log("[v0] Running signal engine...")
     const result = await runSignalEngine()
 
     return NextResponse.json({
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("[v0] Signal generation error:", error)
+    console.error("[v0] Signal engine route error:", error)
     return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
   }
 }
@@ -35,3 +35,4 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   return POST(req)
 }
+

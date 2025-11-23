@@ -39,10 +39,10 @@ export async function POST(req: NextRequest) {
 
     const supabase = supabaseServer()
 
-    // Fetch signal details
+    // Fetch signal details with symbol join
     const { data: signal, error: signalError } = await supabase
       .from("signals")
-      .select("*, symbol_id, symbols(fmp_symbol, display_symbol)")
+      .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name)")
       .eq("id", signalId)
       .single()
 
@@ -51,8 +51,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Signal not found" }, { status: 404 })
     }
 
-    // Check if signal is still active
-    if (signal.status !== "active" && signal.status !== "pending") {
+    // Check if signal is still active (if status column exists)
+    if (signal.status && signal.status !== "active" && signal.status !== "pending") {
       return NextResponse.json({ error: "Signal is no longer active" }, { status: 400 })
     }
 
@@ -81,30 +81,41 @@ export async function POST(req: NextRequest) {
     const riskAmount = balance * riskPercent
 
     // Calculate position size (simplified - assumes 1:1 risk)
-    const entry = parseFloat(signal.entry)
-    const sl = parseFloat(signal.sl)
+    const entry = typeof signal.entry === "number" ? signal.entry : parseFloat(String(signal.entry || "0"))
+    const sl = typeof signal.sl === "number" ? signal.sl : parseFloat(String(signal.sl || "0"))
     const riskPerUnit = Math.abs(entry - sl)
     const size = riskPerUnit > 0 ? riskAmount / riskPerUnit : 0
+
+    // Build trade insert object (handle missing columns gracefully)
+    const tradeData: any = {
+      user_id: userId,
+      signal_id: signalId,
+      symbol: signal.symbol || signal.symbols?.display_symbol || "UNKNOWN",
+      direction: signal.direction,
+      entry_price: entry,
+      status: "open",
+      opened_at: new Date().toISOString(),
+    }
+
+    // Add optional fields if they exist
+    if (signal.symbol_id) tradeData.symbol_id = signal.symbol_id
+    if (signal.sl !== null && signal.sl !== undefined) tradeData.sl = sl
+    if (signal.tp1 !== null && signal.tp1 !== undefined) {
+      tradeData.tp1 = typeof signal.tp1 === "number" ? signal.tp1 : parseFloat(String(signal.tp1))
+    }
+    if (signal.tp2 !== null && signal.tp2 !== undefined) {
+      tradeData.tp2 = typeof signal.tp2 === "number" ? signal.tp2 : parseFloat(String(signal.tp2))
+    }
+    if (signal.tp3 !== null && signal.tp3 !== undefined) {
+      tradeData.tp3 = typeof signal.tp3 === "number" ? signal.tp3 : parseFloat(String(signal.tp3))
+    }
+    if (signal.timeframe) tradeData.timeframe = signal.timeframe
+    if (size > 0) tradeData.size = size
 
     // Create trade
     const { data: trade, error: tradeError } = await supabase
       .from("trades")
-      .insert({
-        user_id: userId,
-        signal_id: signalId,
-        symbol_id: signal.symbol_id,
-        symbol: signal.symbol,
-        direction: signal.direction,
-        entry_price: entry,
-        sl: sl,
-        tp1: signal.tp1 ? parseFloat(signal.tp1) : null,
-        tp2: signal.tp2 ? parseFloat(signal.tp2) : null,
-        tp3: signal.tp3 ? parseFloat(signal.tp3) : null,
-        timeframe: signal.timeframe || null,
-        status: "open",
-        size: size,
-        opened_at: new Date().toISOString(),
-      })
+      .insert(tradeData)
       .select()
       .single()
 

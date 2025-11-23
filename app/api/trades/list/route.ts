@@ -85,19 +85,35 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Calculate stats
+    // Calculate stats - null-safe
     const total = trades?.length ?? 0
-    const wins = trades?.filter((t) => (t.result_r ?? 0) > 0).length ?? 0
-    const losses = trades?.filter((t) => (t.result_r ?? 0) < 0).length ?? 0
+    const closedTrades = trades?.filter((t) => t.status !== "open") ?? []
+    const wins = closedTrades.filter((t) => {
+      const r = t.result_r
+      return r !== null && r !== undefined && r > 0
+    }).length
+    const losses = closedTrades.filter((t) => {
+      const r = t.result_r
+      return r !== null && r !== undefined && r < 0
+    }).length
     const open = trades?.filter((t) => t.status === "open").length ?? 0
-    const winRate = total > 0 ? ((wins / total) * 100).toFixed(1) : "0.0"
+    const winRate = closedTrades.length > 0 ? (wins / closedTrades.length) * 100 : 0
+    
+    // Calculate average R for closed trades
+    const closedWithR = closedTrades
+      .map((t) => t.result_r)
+      .filter((r): r is number => r !== null && r !== undefined && !isNaN(Number(r)))
+    const avgR = closedWithR.length > 0 
+      ? closedWithR.reduce((sum, r) => sum + Number(r), 0) / closedWithR.length 
+      : null
 
     const stats = {
       total,
       wins,
       losses,
       open,
-      winRate: parseFloat(winRate),
+      winRate: Number(winRate.toFixed(1)),
+      avgR: avgR !== null ? Number(avgR.toFixed(2)) : undefined,
     }
 
     return NextResponse.json({ trades: trades ?? [], stats })

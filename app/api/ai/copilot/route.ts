@@ -39,6 +39,7 @@ type Body = {
   message: string
   signalId?: string
   conversationId?: string
+  tradeId?: string
 }
 
 export async function POST(request: NextRequest) {
@@ -112,15 +113,37 @@ export async function POST(request: NextRequest) {
       // 1) Ensure conversation exists
       if (!conversationId) {
         try {
-          const { data: newConversation, error: convError } = await supabase
-            .from("conversations")
-            .insert({
-              user_id: userId || null, // null for guest users
-              title: body.message.slice(0, 80) || "New Conversation",
-              signal_id: body.signalId || null,
-            })
-            .select("id")
-            .single()
+          // For authenticated users, try to find existing conversation from today
+          if (userId) {
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const { data: existingConvo } = await supabase
+              .from("conversations")
+              .select("id")
+              .eq("user_id", userId)
+              .gte("created_at", today.toISOString())
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+
+            if (existingConvo) {
+              conversationId = existingConvo.id
+              console.log("[v0] Reusing existing conversation:", conversationId)
+            }
+          }
+
+          // Create new conversation if none found
+          if (!conversationId) {
+            const { data: newConversation, error: convError } = await supabase
+              .from("conversations")
+              .insert({
+                user_id: userId || null, // null for guest users
+                title: body.message.slice(0, 80) || "New Conversation",
+                signal_id: body.signalId || null,
+                trade_id: body.tradeId || null,
+              })
+              .select("id")
+              .single()
           
           if (!convError && newConversation) {
             conversationId = newConversation.id

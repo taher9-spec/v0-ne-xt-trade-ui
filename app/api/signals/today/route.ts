@@ -15,12 +15,37 @@ export async function GET() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const { data, error } = await supabase
+    // Build query - try to join with symbols if symbol_id exists
+    let query = supabase
       .from("signals")
       .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
       .gte("created_at", today.toISOString())
-      .in("status", ["active", "pending"])
       .order("created_at", { ascending: false })
+      .limit(limit)
+
+    // Filter by symbolId if provided
+    if (symbolId) {
+      query = query.eq("symbol_id", symbolId)
+    }
+
+    // Filter by status if column exists (try-catch for backward compatibility)
+    try {
+      const { data: statusCheck } = await supabase
+        .from("signals")
+        .select("status")
+        .limit(1)
+        .maybeSingle()
+
+      if (statusCheck && statusCheck.status !== undefined && statusCheck.status !== null) {
+        // Status column exists, filter by active/pending
+        query = query.in("status", ["active", "pending"])
+      }
+    } catch (e) {
+      // Status column might not exist, continue without filter
+      console.log("[v0] Status column check failed, continuing without status filter")
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error("[v0] Error fetching signals from Supabase:", error)

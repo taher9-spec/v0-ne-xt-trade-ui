@@ -140,10 +140,40 @@ export async function GET(req: NextRequest) {
     }
 
     // Upsert user data with security fields
-    const { data: user, error } = await supabase
+    // First, try to find existing user by telegram_id
+    const { data: existingUser } = await supabase
       .from("users")
-      .upsert(
-        {
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .single()
+
+    let user
+    let error
+
+    if (existingUser) {
+      // Update existing user
+      const { data: updatedUser, error: updateError } = await supabase
+        .from("users")
+        .update({
+          username: username || firstName || null,
+          photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
+          full_name: fullName || null,
+          last_auth_date: authDate.toISOString(),
+          session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
+          last_login_ip: clientIP,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingUser.id)
+        .select()
+        .single()
+      
+      user = updatedUser
+      error = updateError
+    } else {
+      // Insert new user
+      const { data: newUser, error: insertError } = await supabase
+        .from("users")
+        .insert({
           telegram_id: telegramId,
           username: username || firstName || null,
           photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
@@ -152,15 +182,20 @@ export async function GET(req: NextRequest) {
           session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
           last_login_ip: clientIP,
           updated_at: new Date().toISOString(),
-        },
-        { onConflict: "telegram_id" },
-      )
-      .select()
-      .single()
+        })
+        .select()
+        .single()
+      
+      user = newUser
+      error = insertError
+    }
 
     if (error) {
       console.error("[v0] Telegram auth upsert error:", error)
-      return NextResponse.redirect(new URL("/?auth=failed&reason=upsert_error", req.url))
+      console.error("[v0] Error details:", JSON.stringify(error, null, 2))
+      console.error("[v0] Telegram ID:", telegramId)
+      console.error("[v0] Supabase client type:", supabase ? "initialized" : "failed")
+      return NextResponse.redirect(new URL("/?auth=failed&reason=upsert_error&details=" + encodeURIComponent(error.message || "unknown"), req.url))
     }
 
     if (!user) {

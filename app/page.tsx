@@ -892,8 +892,10 @@ export default function NextTradeUI() {
     }
 
     if (!user) {
-      // Check if we're inside Telegram WebApp
+      // Check if we're inside Telegram WebApp with actual user data
       const insideTelegram = isTelegramWebApp()
+      
+      console.log("[v0] Account - not logged in, insideTelegram:", insideTelegram)
 
       return (
         <div className="space-y-6 pb-20">

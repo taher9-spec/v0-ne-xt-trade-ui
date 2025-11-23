@@ -10,10 +10,20 @@ export function TelegramLoginButton() {
   useEffect(() => {
     if (typeof window === "undefined") return
     
-    // Check if we're inside Telegram WebApp
+    // Check if we're inside Telegram WebApp with actual user data
     // @ts-ignore - Telegram WebApp is injected by Telegram
     const tg = window.Telegram?.WebApp
-    setIsTelegramWebApp(!!tg)
+    
+    // Only consider it WebApp if we have actual user data
+    const isWebApp = !!(tg?.initDataUnsafe?.user && tg?.initData)
+    setIsTelegramWebApp(isWebApp)
+    
+    console.log("[v0] TelegramLoginButton - isTelegramWebApp:", isWebApp, {
+      hasTelegram: !!window.Telegram,
+      hasWebApp: !!tg,
+      hasUserData: !!tg?.initDataUnsafe?.user,
+      hasInitData: !!tg?.initData,
+    })
   }, [])
 
   useEffect(() => {

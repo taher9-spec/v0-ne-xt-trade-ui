@@ -32,6 +32,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Telegram WebApp SDK - Required for Mini App authentication */}
+        <script src="https://telegram.org/js/telegram-web-app.js" async />
+      </head>
       <body className={`font-sans antialiased`}>
         {children}
         {/* <Analytics /> */}

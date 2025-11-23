@@ -265,43 +265,80 @@ export default function NextTradeUI() {
     if (typeof window === "undefined") return
     if (user) return // Already authenticated, don't re-authenticate
 
-    // @ts-ignore - Telegram WebApp is injected by Telegram
-    const tg = window.Telegram?.WebApp
-    if (!tg || !tg.initData) return
+    // Wait a bit for Telegram WebApp to initialize
+    const checkWebApp = () => {
+      // @ts-ignore - Telegram WebApp is injected by Telegram
+      const tg = window.Telegram?.WebApp
+      
+      console.log("[v0] Checking for Telegram WebApp:", {
+        hasTelegram: !!window.Telegram,
+        hasWebApp: !!tg,
+        hasInitData: !!tg?.initData,
+        hasInitDataUnsafe: !!tg?.initDataUnsafe,
+        initDataLength: tg?.initData?.length || 0,
+      })
 
-    const initData = tg.initData
-    if (!initData) return
+      if (!tg) {
+        console.log("[v0] Telegram WebApp not found - will use widget for desktop")
+        return
+      }
 
-    console.log("[v0] Telegram WebApp detected, authenticating with initData...")
-    setAuthLoading(true)
+      // Try to get initData (raw string) or initDataUnsafe (parsed object)
+      const initData = tg.initData
+      const initDataUnsafe = tg.initDataUnsafe
 
-    // Authenticate using initData
-    fetch("/api/auth/telegram-webapp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ initData }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const error = await res.json().catch(() => ({}))
-          throw new Error(error.error || `Auth failed: ${res.status}`)
-        }
-        return res.json()
+      if (!initData && !initDataUnsafe?.user) {
+        console.log("[v0] No initData available yet, will retry...")
+        // Retry after a short delay (Telegram might still be initializing)
+        setTimeout(checkWebApp, 500)
+        return
+      }
+
+      // If we have initDataUnsafe but not initData, we need to reconstruct it
+      // But actually, we need the raw initData string for signature verification
+      if (!initData) {
+        console.error("[v0] initDataUnsafe available but initData string is missing")
+        console.log("[v0] This might be a Telegram WebApp initialization issue")
+        return
+      }
+
+      console.log("[v0] Telegram WebApp detected, authenticating with initData...")
+      setAuthLoading(true)
+
+      // Authenticate using initData
+      fetch("/api/auth/telegram-webapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ initData }),
       })
-      .then((data) => {
-        console.log("[v0] WebApp auth successful:", data.user)
-        if (data.user) {
-          setUser(data.user)
-        }
-      })
-      .catch((err) => {
-        console.error("[v0] WebApp auth error:", err)
-        // Don't show error to user - they can still use the widget if needed
-        // The widget will show for desktop users
-      })
-      .finally(() => {
-        setAuthLoading(false)
-      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const error = await res.json().catch(() => ({}))
+            console.error("[v0] WebApp auth failed:", res.status, error)
+            throw new Error(error.error || `Auth failed: ${res.status}`)
+          }
+          return res.json()
+        })
+        .then((data) => {
+          console.log("[v0] WebApp auth successful:", data.user)
+          if (data.user) {
+            setUser(data.user)
+          }
+        })
+        .catch((err) => {
+          console.error("[v0] WebApp auth error:", err)
+          // Don't show error to user - they can still use the widget if needed
+        })
+        .finally(() => {
+          setAuthLoading(false)
+        })
+    }
+
+    // Check immediately, and also after a short delay (in case Telegram is still loading)
+    checkWebApp()
+    const timeoutId = setTimeout(checkWebApp, 1000)
+    
+    return () => clearTimeout(timeoutId)
   }, [user]) // Only run if user is not already authenticated
 
   const mainQuote = quotes.find((q) => q.symbol === selectedSymbol) || { price: 0, changesPercentage: 0 }

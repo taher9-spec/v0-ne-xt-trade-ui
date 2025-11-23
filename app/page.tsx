@@ -265,51 +265,36 @@ export default function NextTradeUI() {
     if (typeof window === "undefined") return
     if (user) return // Already authenticated, don't re-authenticate
 
-    // Wait a bit for Telegram WebApp to initialize
-    const checkWebApp = () => {
-      // @ts-ignore - Telegram WebApp is injected by Telegram
-      const tg = window.Telegram?.WebApp
-      
-      console.log("[v0] Checking for Telegram WebApp:", {
-        hasTelegram: !!window.Telegram,
-        hasWebApp: !!tg,
-        hasInitData: !!tg?.initData,
-        hasInitDataUnsafe: !!tg?.initDataUnsafe,
-        initDataLength: tg?.initData?.length || 0,
-      })
+    // @ts-ignore - Telegram WebApp is injected by Telegram
+    const tg = window.Telegram?.WebApp
+    if (!tg) return // Not inside Telegram
 
-      if (!tg) {
-        console.log("[v0] Telegram WebApp not found - will use widget for desktop")
-        return
-      }
+    const webAppUser = tg.initDataUnsafe?.user
+    if (!webAppUser) {
+      console.log("[v0] Telegram WebApp found but no user data yet, will retry...")
+      // Retry after a short delay
+      setTimeout(() => {
+        // @ts-ignore
+        const retryTg = window.Telegram?.WebApp
+        const retryUser = retryTg?.initDataUnsafe?.user
+        if (retryUser && !user) {
+          // Retry authentication
+          authenticateWebApp(retryUser)
+        }
+      }, 1000)
+      return
+    }
 
-      // Try to get initData (raw string) or initDataUnsafe (parsed object)
-      const initData = tg.initData
-      const initDataUnsafe = tg.initDataUnsafe
+    console.log("[v0] Telegram WebApp detected, auto-authenticating...")
+    authenticateWebApp(webAppUser)
 
-      if (!initData && !initDataUnsafe?.user) {
-        console.log("[v0] No initData available yet, will retry...")
-        // Retry after a short delay (Telegram might still be initializing)
-        setTimeout(checkWebApp, 500)
-        return
-      }
-
-      // If we have initDataUnsafe but not initData, we need to reconstruct it
-      // But actually, we need the raw initData string for signature verification
-      if (!initData) {
-        console.error("[v0] initDataUnsafe available but initData string is missing")
-        console.log("[v0] This might be a Telegram WebApp initialization issue")
-        return
-      }
-
-      console.log("[v0] Telegram WebApp detected, authenticating with initData...")
+    function authenticateWebApp(telegramUser: any) {
       setAuthLoading(true)
 
-      // Authenticate using initData
-      fetch("/api/auth/telegram-webapp", {
+      fetch("/api/auth/telegram/webapp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ initData }),
+        body: JSON.stringify({ user: telegramUser }),
       })
         .then(async (res) => {
           if (!res.ok) {
@@ -320,25 +305,28 @@ export default function NextTradeUI() {
           return res.json()
         })
         .then((data) => {
-          console.log("[v0] WebApp auth successful:", data.user)
+          console.log("[v0] ✅ WebApp auth successful:", data.user)
           if (data.user) {
             setUser(data.user)
+            // Refresh user data to ensure everything is synced
+            setTimeout(() => {
+              fetch("/api/me", { cache: "no-store" })
+                .then((res) => res.json())
+                .then((json) => {
+                  if (json.user) setUser(json.user)
+                })
+                .catch(() => {})
+            }, 500)
           }
         })
         .catch((err) => {
-          console.error("[v0] WebApp auth error:", err)
+          console.error("[v0] ❌ WebApp auth error:", err)
           // Don't show error to user - they can still use the widget if needed
         })
         .finally(() => {
           setAuthLoading(false)
         })
     }
-
-    // Check immediately, and also after a short delay (in case Telegram is still loading)
-    checkWebApp()
-    const timeoutId = setTimeout(checkWebApp, 1000)
-    
-    return () => clearTimeout(timeoutId)
   }, [user]) // Only run if user is not already authenticated
 
   const mainQuote = quotes.find((q) => q.symbol === selectedSymbol) || { price: 0, changesPercentage: 0 }
@@ -494,6 +482,12 @@ export default function NextTradeUI() {
     const [loading, setLoading] = useState(false)
 
     const handleTakeSignal = async () => {
+      if (!user) {
+        // Redirect to Account tab and show login
+        setActiveTab("account")
+        return
+      }
+
       setLoading(true)
       try {
         const res = await fetch("/api/trades/mark-taken", {
@@ -505,7 +499,7 @@ export default function NextTradeUI() {
           setTaken(true)
           console.log("[v0] Signal marked as taken:", signal.symbol)
         } else if (res.status === 401) {
-          alert("Please sign in with Telegram in the Account tab first.")
+          setActiveTab("account")
         }
       } catch (e) {
         console.error("[v0] Failed to mark trade taken", e)
@@ -672,8 +666,16 @@ export default function NextTradeUI() {
   )
 
   const AICopilot = () => {
-    const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([
+    type ChatMessage = {
+      id: string
+      role: "user" | "assistant"
+      content: string
+      created_at?: string
+    }
+
+    const [messages, setMessages] = useState<ChatMessage[]>([
       {
+        id: "welcome",
         role: "assistant",
         content: "Hello! I'm your AI trading assistant. Ask me anything about market analysis, signal explanations, or trading strategies.",
       },
@@ -682,122 +684,156 @@ export default function NextTradeUI() {
     const [loading, setLoading] = useState(false)
     const [conversationId, setConversationId] = useState<string | null>(null)
 
+    // Load latest conversation on mount
+    useEffect(() => {
+      ;(async () => {
+        try {
+          const res = await fetch("/api/ai/conversation/latest")
+          if (!res.ok) return
+          const data = await res.json()
+          if (data.conversation) {
+            setConversationId(data.conversation.id)
+          }
+          if (data.messages && data.messages.length > 0) {
+            setMessages(
+              data.messages.map((m: any) => ({
+                id: m.id,
+                role: m.role,
+                content: m.content,
+                created_at: m.created_at,
+              }))
+            )
+          }
+        } catch (e) {
+          console.error("[v0] Load last conversation failed", e)
+        }
+      })()
+    }, [])
+
     const handleSend = async () => {
       if (!input.trim() || loading) return
 
-      const userMessage = input.trim()
-      const tempInput = input // Keep input for error case
+      const text = input.trim()
+      const localUserMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: text,
+        created_at: new Date().toISOString(),
+      }
+
+      setMessages((prev) => [...prev, localUserMsg])
       setInput("")
       setLoading(true)
-
-      // Add user message immediately (so it doesn't disappear)
-      setMessages((prev) => [...prev, { role: "user", content: userMessage }])
 
       try {
         const res = await fetch("/api/ai/copilot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            message: userMessage,
+          body: JSON.stringify({
+            message: text,
             conversationId: conversationId || undefined,
           }),
         })
 
+        const data = await res.json()
+
         if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}))
-          
-          // Handle specific error cases
-          if (res.status === 401) {
-            const errorMsg = errorJson.error || "Authentication failed"
-            if (errorMsg.includes("Incorrect API key") || errorMsg.includes("Invalid API key")) {
-              throw new Error("OpenAI API key is invalid. Please check your API key in .env.local and restart the server.")
-            }
-            throw new Error(errorMsg)
-          }
-          
-          if (res.status === 429) {
-            const retryAfter = errorJson.retry_after || 60
-            throw new Error(`Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`)
-          }
-          
-          throw new Error(errorJson.error || `Failed to get response (${res.status})`)
+          console.error("[v0] AI Copilot error", data)
+          throw new Error(data.error || `Failed to get response (${res.status})`)
         }
 
-        const json = await res.json()
-        if (json.reply) {
-          setMessages((prev) => [...prev, { role: "assistant", content: json.reply }])
-          // Store conversation ID for subsequent messages
-          if (json.conversationId && !conversationId) {
-            setConversationId(json.conversationId)
+        if (data.conversationId && data.conversationId !== conversationId) {
+          setConversationId(data.conversationId)
+        }
+
+        if (data.reply) {
+          const assistantMsg: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: data.reply,
+            created_at: new Date().toISOString(),
           }
-        } else {
-          throw new Error("No reply from AI")
+          setMessages((prev) => [...prev, assistantMsg])
         }
       } catch (e: any) {
-        console.error("[v0] AI Copilot error", e)
-        
-        // Provide user-friendly error messages
-        let errorMessage = e.message || "Sorry, I encountered an error. Please try again."
-        
-        // Check for specific error types
-        if (errorMessage.includes("API key") || errorMessage.includes("Invalid API key") || errorMessage.includes("Incorrect API key")) {
-          errorMessage = "⚠️ OpenAI API key configuration issue.\n\nPlease check:\n• Your API key in .env.local is correct\n• No quotes around the key value\n• Key is active at platform.openai.com\n• Restart dev server after changes\n\nCheck server console for detailed diagnostics."
-        } else if (errorMessage.includes("Rate limit") || errorMessage.includes("429")) {
-          errorMessage = errorMessage // Already user-friendly
-        } else if (errorMessage.includes("retry_after")) {
-          const match = errorMessage.match(/(\d+)/)
-          errorMessage = `⏱️ Too many requests. Please wait ${match ? match[1] : "a moment"} seconds and try again.`
+        console.error("[v0] handleSend error", e)
+        const errorMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: e.message || "Sorry, I encountered an error. Please try again.",
+          created_at: new Date().toISOString(),
         }
-        
-        // IMPORTANT: Append error message, don't replace messages
-        // The user message was already added, now add the error response
-        setMessages((prev) => {
-          // Always append error message - user message should already be in the array
-          return [...prev, { role: "assistant", content: errorMessage }]
-        })
-        
-        // Restore input if there was an error (so user can retry)
-        if (tempInput) {
-          setInput(tempInput)
-        }
+        setMessages((prev) => [...prev, errorMsg])
       } finally {
         setLoading(false)
       }
     }
 
+    const handleClearChat = () => {
+      setMessages([
+        {
+          id: "welcome",
+          role: "assistant",
+          content: "Hello! I'm your AI trading assistant. Ask me anything about market analysis, signal explanations, or trading strategies.",
+        },
+      ])
+      setConversationId(null)
+    }
+
     return (
       <div className="space-y-6 pb-32">
         <header className="pt-2">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-white" />
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">AI Copilot</h1>
+                <p className="text-xs text-zinc-500">Your trading assistant</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold">AI Copilot</h1>
-              <p className="text-xs text-zinc-500">Your trading assistant</p>
-            </div>
+            <button
+              onClick={handleClearChat}
+              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Clear chat
+            </button>
           </div>
         </header>
 
         <div className="space-y-3 max-h-[calc(100vh-280px)] overflow-y-auto">
-          {messages.map((msg, idx) => (
-            <Card
-              key={idx}
-              className={`p-3 border-zinc-800 ${
-                msg.role === "assistant"
-                  ? "bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/30"
-                  : "bg-zinc-950"
-              }`}
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`group flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div className="flex items-start gap-2">
+              <Card
+                className={`relative max-w-[80%] p-3 border-zinc-800 ${
+                  msg.role === "assistant"
+                    ? "bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/30"
+                    : "bg-zinc-950"
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {msg.role === "assistant" && (
+                    <div className="w-6 h-6 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot className="w-3 h-3 text-white" />
+                    </div>
+                  )}
+                  <p className="text-sm flex-1 whitespace-pre-wrap">{msg.content}</p>
+                </div>
                 {msg.role === "assistant" && (
-                  <div className="w-6 h-6 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot className="w-3 h-3 text-white" />
-                  </div>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(msg.content)}
+                    className="absolute -right-8 top-2 opacity-0 group-hover:opacity-100 text-[10px] text-zinc-400 hover:text-zinc-100 transition-opacity"
+                    title="Copy"
+                  >
+                    Copy
+                  </button>
                 )}
-                <p className="text-sm flex-1">{msg.content}</p>
-              </div>
-            </Card>
+              </Card>
+            </div>
           ))}
           {loading && (
             <Card className="p-3 bg-gradient-to-br from-purple-500/10 to-pink-500/10 border-purple-500/30">
@@ -1004,6 +1040,17 @@ export default function NextTradeUI() {
               <span className="font-semibold">{((user.risk_percent ?? 1.0) as number).toFixed(1)}%</span>
             </div>
           </div>
+          {/* "Open in Telegram" button for browser users */}
+          {typeof window !== "undefined" && !isTelegramWebApp() && (
+            <a
+              href="https://t.me/nexttrade_SIGNAL_bot/httpsv0-ne-xt-trade-ui.vercel.app"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-flex items-center justify-center w-full rounded-full px-4 py-2 text-sm font-medium border border-zinc-700 hover:bg-zinc-900 transition-colors"
+            >
+              Open in Telegram
+            </a>
+          )}
         </Card>
 
         <section>

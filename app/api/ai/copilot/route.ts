@@ -109,15 +109,36 @@ export async function POST(request: NextRequest) {
       }
       
       // Handle conversation storage (for both authenticated and guest users)
-      // Gracefully handle schema cache issues - don't fail the entire request
+      let historyMessages: Array<{ role: "user" | "assistant"; content: string }> | null = null
+      
+      if (!conversationId && userId) {
+        // Try to find existing conversation for this user
+        try {
+          const { data: existing } = await supabase
+            .from("conversations")
+            .select("id")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          
+          if (existing?.id) {
+            conversationId = existing.id
+            console.log("[v0] Found existing conversation:", conversationId)
+          }
+        } catch (dbError: any) {
+          console.error("[v0] Error finding existing conversation:", dbError)
+        }
+      }
+      
+      // Create new conversation if needed
       if (!conversationId) {
         try {
-          // Create new conversation
           const { data: newConversation, error: convError } = await supabase
             .from("conversations")
             .insert({
               user_id: userId || null, // null for guest users
-              title: body.message.slice(0, 50) || "New Conversation", // First 50 chars as title
+              title: body.message.slice(0, 80) || "New Conversation",
               signal_id: body.signalId || null,
             })
             .select()
@@ -143,10 +164,26 @@ export async function POST(request: NextRequest) {
             conversation_id: conversationId,
             role: "user",
             content: body.message,
+            metadata: body.signalId ? { signalId: body.signalId } : null,
           })
           if (msgError) {
             console.error("[v0] Failed to store user message:", msgError)
             // Continue - message storage is optional
+          }
+          
+          // Load last 12 messages as history
+          const { data: history, error: historyErr } = await supabase
+            .from("messages")
+            .select("role, content")
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: true })
+            .limit(12)
+          
+          if (!historyErr && history) {
+            historyMessages = history.map((m) => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: m.content,
+            }))
           }
         } catch (dbError: any) {
           console.error("[v0] Database error storing message:", dbError)
@@ -223,7 +260,7 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: body.message },
+          ...(historyMessages ?? [{ role: "user" as const, content: body.message }]),
         ],
         temperature: 0.7,
         max_tokens: 500,

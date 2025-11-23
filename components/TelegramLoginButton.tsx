@@ -1,18 +1,32 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 
 export function TelegramLoginButton() {
   const containerRef = useRef<HTMLDivElement>(null)
   const scriptLoadedRef = useRef(false)
+  const [isTelegramWebApp, setIsTelegramWebApp] = useState(false)
 
   useEffect(() => {
+    if (typeof window === "undefined") return
+    
+    // Check if we're inside Telegram WebApp
+    // @ts-ignore - Telegram WebApp is injected by Telegram
+    const tg = window.Telegram?.WebApp
+    setIsTelegramWebApp(!!tg)
+  }, [])
+
+  useEffect(() => {
+    // Inside Telegram we auto-auth with WebApp, no widget needed
+    if (isTelegramWebApp) return
+    
     if (!containerRef.current || scriptLoadedRef.current) return
 
     // Check if script already exists
     const existingScript = document.querySelector('script[src="https://telegram.org/js/telegram-widget.js?22"]')
     if (existingScript) {
       scriptLoadedRef.current = true
+      return
     }
 
     // Create script element for Telegram widget
@@ -44,7 +58,12 @@ export function TelegramLoginButton() {
     return () => {
       // Cleanup handled by React
     }
-  }, [])
+  }, [isTelegramWebApp])
+
+  // Inside Telegram WebApp, don't render the widget (we auto-auth instead)
+  if (isTelegramWebApp) {
+    return null
+  }
 
   return (
     <div className="flex flex-col items-center gap-3 py-6">

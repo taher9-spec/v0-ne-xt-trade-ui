@@ -1,0 +1,176 @@
+import { type NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
+import { supabaseServer } from "@/lib/supabaseServer"
+import { checkRateLimit, getClientIP } from "@/lib/rateLimit"
+
+// Rate limiting: 5 auth attempts per IP per 15 minutes
+const AUTH_RATE_LIMIT = {
+  maxRequests: 5,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    // Rate limiting
+    const clientIP = getClientIP(req)
+    const rateLimit = checkRateLimit(`auth-webapp:${clientIP}`, AUTH_RATE_LIMIT.maxRequests, AUTH_RATE_LIMIT.windowMs)
+    
+    if (!rateLimit.allowed) {
+      console.warn(`[v0] Rate limit exceeded for IP: ${clientIP}`)
+      return NextResponse.json(
+        { 
+          error: "Rate limit exceeded", 
+          retry_after: Math.ceil((rateLimit.resetAt - Date.now()) / 1000) 
+        },
+        { 
+          status: 429,
+          headers: {
+            "Retry-After": Math.ceil((rateLimit.resetAt - Date.now()) / 1000).toString(),
+          }
+        }
+      )
+    }
+
+    const body = await req.json()
+    const { user } = body
+
+    if (!user?.id) {
+      console.error("[v0] Missing Telegram user in WebApp auth")
+      return NextResponse.json(
+        { error: "Missing Telegram user" },
+        { status: 400 }
+      )
+    }
+
+    // Initialize Supabase
+    let supabase
+    try {
+      supabase = supabaseServer()
+    } catch (error: any) {
+      console.error("[v0] Failed to initialize Supabase:", error)
+      return NextResponse.json({ error: "Database connection error" }, { status: 500 })
+    }
+
+    // Extract user data
+    const telegramId = String(user.id)
+    const firstName = (user.first_name || "").trim().slice(0, 100)
+    const lastName = (user.last_name || "").trim().slice(0, 100)
+    const username = user.username ? user.username.trim().slice(0, 50) : null
+    const photoUrl = user.photo_url ? user.photo_url.trim() : null
+
+    // Validate photo URL
+    if (photoUrl && !photoUrl.startsWith("https://")) {
+      console.warn("[v0] Invalid photo_url format, ignoring:", photoUrl)
+      // Don't fail auth, just ignore invalid photo URL
+    }
+
+    // Build full name
+    const fullName = [firstName, lastName].filter(Boolean).join(" ") || username || "User"
+
+    // Find existing user or create new one
+    const { data: existingUser, error: findError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .maybeSingle()
+    
+    if (findError) {
+      console.error("[v0] Error finding existing user:", findError)
+    }
+
+    let userData
+    let error
+
+    if (existingUser && existingUser.id) {
+      // Update existing user
+      const updateData: Record<string, any> = {
+        username: username || firstName || null,
+        photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
+        full_name: fullName || null,
+        last_auth_date: new Date().toISOString(),
+        session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
+        last_login_ip: clientIP,
+        updated_at: new Date().toISOString(),
+      }
+
+      const { data: updatedUser, error: updateError } = await supabase
+        .from("users")
+        .update(updateData)
+        .eq("id", existingUser.id)
+        .select()
+        .single()
+      
+      userData = updatedUser
+      error = updateError
+    } else {
+      // Insert new user
+      const insertData: Record<string, any> = {
+        telegram_id: telegramId,
+        username: username || firstName || null,
+        photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
+        full_name: fullName || null,
+        last_auth_date: new Date().toISOString(),
+        session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
+        last_login_ip: clientIP,
+        updated_at: new Date().toISOString(),
+      }
+
+      const { data: newUser, error: insertError } = await supabase
+        .from("users")
+        .insert(insertData)
+        .select()
+        .single()
+      
+      userData = newUser
+      error = insertError
+    }
+
+    if (error) {
+      console.error("[v0] WebApp auth upsert error:", error)
+      console.error("[v0] Error details:", JSON.stringify(error, null, 2))
+      return NextResponse.json({ error: error.message || "Database error" }, { status: 500 })
+    }
+
+    if (!userData) {
+      console.error("[v0] User not created/retrieved")
+      return NextResponse.json({ error: "User creation failed" }, { status: 500 })
+    }
+
+    // Set cookies (same as normal auth route)
+    const res = NextResponse.json({ user: userData })
+    const cookieMaxAge = 60 * 60 * 24 * 365 // 1 year
+    
+    // IMPORTANT: use internal user UUID, not telegram_id
+    res.cookies.set("tg_user_id", userData.id, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: cookieMaxAge,
+    })
+
+    res.cookies.set("tg_username", userData.username || "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: cookieMaxAge,
+    })
+
+    // Set security headers
+    res.headers.set("X-Content-Type-Options", "nosniff")
+    res.headers.set("X-Frame-Options", "DENY")
+    res.headers.set("X-XSS-Protection", "1; mode=block")
+    res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+    console.log("[v0] Telegram WebApp auth successful for user:", telegramId, "IP:", clientIP)
+    return res
+  } catch (err: any) {
+    console.error("[v0] WebApp auth route error:", err)
+    return NextResponse.json(
+      { error: "Internal server error", details: err.message },
+      { status: 500 }
+    )
+  }
+}
+

@@ -1,0 +1,195 @@
+import { type NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
+import { supabaseServer } from "@/lib/supabaseServer"
+import { checkRateLimit, getClientIP } from "@/lib/rateLimit"
+import crypto from "crypto"
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
+
+// Rate limiting: 5 auth attempts per IP per 15 minutes
+const AUTH_RATE_LIMIT = {
+  maxRequests: 5,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+}
+
+/**
+ * Verify Telegram Login Widget authentication data
+ * Based on official Telegram documentation: https://core.telegram.org/widgets/login
+ * 
+ * @param data - Query parameters from Telegram Login Widget
+ * @returns true if hash is valid, false otherwise
+ */
+function verifyTelegramAuth(data: Record<string, string>): boolean {
+  if (!BOT_TOKEN) {
+    console.error("[v0] TELEGRAM_BOT_TOKEN is not set")
+    return false
+  }
+
+  const { hash, ...fields } = data
+
+  if (!hash) {
+    return false
+  }
+
+  // Build check string: sort keys alphabetically, format as "key=value\n"
+  const checkString = Object.keys(fields)
+    .sort()
+    .map((key) => `${key}=${fields[key]}`)
+    .join("\n")
+
+  // Create secret key from bot token (SHA256 hash)
+  const secretKey = crypto.createHash("sha256").update(BOT_TOKEN).digest()
+
+  // Compute HMAC-SHA256
+  const hmac = crypto.createHmac("sha256", secretKey).update(checkString).digest("hex")
+
+  return hmac === hash
+}
+
+/**
+ * Check if auth_date is recent (within 24 hours)
+ * Prevents replay attacks
+ */
+function isAuthDateValid(authDate: string | undefined): boolean {
+  if (!authDate) {
+    return false
+  }
+
+  const authTimestamp = parseInt(authDate, 10)
+  if (isNaN(authTimestamp)) {
+    return false
+  }
+
+  const now = Math.floor(Date.now() / 1000)
+  const maxAge = 60 * 60 * 24 // 24 hours
+
+  return now - authTimestamp < maxAge
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    // Rate limiting: prevent brute force attacks
+    const clientIP = getClientIP(req)
+    const rateLimit = checkRateLimit(`auth:${clientIP}`, AUTH_RATE_LIMIT.maxRequests, AUTH_RATE_LIMIT.windowMs)
+    
+    if (!rateLimit.allowed) {
+      console.warn(`[v0] Rate limit exceeded for IP: ${clientIP}`)
+      return NextResponse.redirect(
+        new URL(`/?auth=failed&reason=rate_limit&retry_after=${Math.ceil((rateLimit.resetAt - Date.now()) / 1000)}`, req.url)
+      )
+    }
+
+    const url = new URL(req.url)
+    const params = Object.fromEntries(url.searchParams.entries())
+
+    // Required parameters
+    if (!params.hash) {
+      console.error("[v0] Missing hash parameter")
+      return NextResponse.redirect(new URL("/?auth=failed&reason=missing_hash", req.url))
+    }
+
+    if (!params.id) {
+      console.error("[v0] Missing id parameter")
+      return NextResponse.redirect(new URL("/?auth=failed&reason=missing_id", req.url))
+    }
+
+    // Validate telegram_id format (should be numeric string)
+    if (!/^\d+$/.test(params.id)) {
+      console.error("[v0] Invalid telegram_id format:", params.id)
+      return NextResponse.redirect(new URL("/?auth=failed&reason=invalid_id", req.url))
+    }
+
+    // Verify hash authenticity
+    if (!verifyTelegramAuth(params)) {
+      console.error("[v0] Invalid Telegram auth hash")
+      return NextResponse.redirect(new URL("/?auth=failed&reason=invalid_hash", req.url))
+    }
+
+    // Check auth_date to prevent replay attacks
+    if (!isAuthDateValid(params.auth_date)) {
+      console.error("[v0] Auth date expired or invalid")
+      return NextResponse.redirect(new URL("/?auth=failed&reason=expired", req.url))
+    }
+
+    // Extract user data from Telegram parameters
+    const telegramId = params.id
+    const firstName = (params.first_name || "").trim().slice(0, 100) // Sanitize and limit length
+    const lastName = (params.last_name || "").trim().slice(0, 100)
+    const username = params.username ? params.username.trim().slice(0, 50) : null
+    const photoUrl = params.photo_url ? params.photo_url.trim() : null
+    
+    // Validate photo URL if provided (must be from Telegram CDN)
+    if (photoUrl && !photoUrl.startsWith("https://")) {
+      console.warn("[v0] Invalid photo_url format, ignoring:", photoUrl)
+      // Don't fail auth, just ignore invalid photo URL
+    }
+
+    // Build full name
+    const fullName = [firstName, lastName].filter(Boolean).join(" ") || username || "User"
+    
+    // Get auth date for audit
+    const authDate = params.auth_date ? new Date(parseInt(params.auth_date) * 1000) : new Date()
+
+    // Initialize Supabase
+    let supabase
+    try {
+      supabase = supabaseServer()
+    } catch (error: any) {
+      console.error("[v0] Failed to initialize Supabase:", error)
+      return NextResponse.redirect(new URL("/?auth=failed&reason=db_error", req.url))
+    }
+
+    // Upsert user data with security fields
+    const { data: user, error } = await supabase
+      .from("users")
+      .upsert(
+        {
+          telegram_id: telegramId,
+          username: username || firstName || null,
+          photo_url: photoUrl && photoUrl.startsWith("https://") ? photoUrl : null,
+          full_name: fullName || null,
+          last_auth_date: authDate.toISOString(),
+          session_expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
+          last_login_ip: clientIP,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "telegram_id" },
+      )
+      .select()
+      .single()
+
+    if (error) {
+      console.error("[v0] Telegram auth upsert error:", error)
+      return NextResponse.redirect(new URL("/?auth=failed&reason=upsert_error", req.url))
+    }
+
+    if (!user) {
+      console.error("[v0] User not created/retrieved")
+      return NextResponse.redirect(new URL("/?auth=failed&reason=no_user", req.url))
+    }
+
+    // Set authentication cookie with security flags
+    const res = NextResponse.redirect(new URL("/?auth=success", req.url))
+    const cookieMaxAge = 60 * 60 * 24 * 365 // 1 year
+    
+    res.cookies.set("tg_user_id", user.id, {
+      httpOnly: true, // Prevent XSS attacks
+      secure: process.env.NODE_ENV === "production", // HTTPS only in production
+      sameSite: "lax", // CSRF protection
+      path: "/",
+      maxAge: cookieMaxAge,
+    })
+
+    // Set security headers
+    res.headers.set("X-Content-Type-Options", "nosniff")
+    res.headers.set("X-Frame-Options", "DENY")
+    res.headers.set("X-XSS-Protection", "1; mode=block")
+    res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+    console.log("[v0] Telegram auth successful for user:", telegramId, "IP:", clientIP)
+    return res
+  } catch (error: any) {
+    console.error("[v0] Unexpected error in Telegram auth:", error)
+    return NextResponse.redirect(new URL("/?auth=failed&reason=server_error", req.url))
+  }
+}

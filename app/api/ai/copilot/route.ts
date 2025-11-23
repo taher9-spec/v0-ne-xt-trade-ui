@@ -110,10 +110,36 @@ export async function POST(request: NextRequest) {
       }
       
       // Handle conversation storage (for both authenticated and guest users)
-      // 1) Ensure conversation exists
+      // 1) Determine conversation - verify ownership if provided, or find/create
+      if (body.conversationId) {
+        // Verify conversation exists and belongs to current user (if authenticated)
+        try {
+          const { data: existingConvo, error: verifyError } = await supabase
+            .from("conversations")
+            .select("id, user_id")
+            .eq("id", body.conversationId)
+            .maybeSingle()
+
+          if (verifyError || !existingConvo) {
+            console.log("[v0] Conversation not found, will create new one")
+            conversationId = null
+          } else if (userId && existingConvo.user_id !== userId) {
+            console.log("[v0] Conversation belongs to different user, will create new one")
+            conversationId = null
+          } else {
+            conversationId = existingConvo.id
+            console.log("[v0] Using provided conversation:", conversationId)
+          }
+        } catch (e) {
+          console.error("[v0] Error verifying conversation:", e)
+          conversationId = null
+        }
+      }
+
+      // If no valid conversationId, find or create one
       if (!conversationId) {
         try {
-          // For authenticated users, try to find existing conversation from today
+          // For authenticated users, look for latest conversation from today
           if (userId) {
             const today = new Date()
             today.setHours(0, 0, 0, 0)
@@ -128,7 +154,7 @@ export async function POST(request: NextRequest) {
 
             if (existingConvo) {
               conversationId = existingConvo.id
-              console.log("[v0] Reusing existing conversation:", conversationId)
+              console.log("[v0] Reusing existing conversation from today:", conversationId)
             }
           }
 
@@ -138,7 +164,7 @@ export async function POST(request: NextRequest) {
               .from("conversations")
               .insert({
                 user_id: userId || null, // null for guest users
-                title: body.message.slice(0, 80) || "New Conversation",
+                title: body.message.slice(0, 40) || "New Conversation",
                 signal_id: body.signalId || null,
                 trade_id: body.tradeId || null,
               })
@@ -147,7 +173,7 @@ export async function POST(request: NextRequest) {
           
             if (!convError && newConversation) {
               conversationId = newConversation.id
-              console.log("[v0] Created conversation:", conversationId)
+              console.log("[v0] Created new conversation:", conversationId)
             } else {
               console.error("[v0] Failed to create conversation:", convError)
               // Continue without conversation storage - AI can still work
@@ -159,18 +185,23 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // 2) Store user message (if conversation exists)
+      // 2) Store user message BEFORE calling OpenAI (if conversation exists)
       if (conversationId) {
         try {
           const { error: msgError } = await supabase.from("messages").insert({
             conversation_id: conversationId,
             role: "user",
             content: body.message,
-            metadata: body.signalId ? { signalId: body.signalId } : null,
+            metadata: {
+              ...(body.signalId ? { signalId: body.signalId } : {}),
+              ...(body.tradeId ? { tradeId: body.tradeId } : {}),
+            },
           })
           if (msgError) {
             console.error("[v0] Failed to store user message:", msgError)
             // Continue - message storage is optional
+          } else {
+            console.log("[v0] Stored user message in conversation:", conversationId)
           }
         } catch (dbError: any) {
           console.error("[v0] Database error storing message:", dbError)
@@ -180,6 +211,7 @@ export async function POST(request: NextRequest) {
     }
     
     // 3) Load conversation history from Supabase (if conversation exists)
+    // Fetch last N messages ordered by created_at ascending (includes the user message we just stored)
     let history: Array<{ role: "user" | "assistant"; content: string }> = []
     
     if (supabase && conversationId) {
@@ -189,13 +221,14 @@ export async function POST(request: NextRequest) {
           .select("role, content")
           .eq("conversation_id", conversationId)
           .order("created_at", { ascending: true })
-          .limit(20)
+          .limit(20) // Last 20 messages for context
         
         if (!historyError && rows) {
           history = rows.map((r) => ({
             role: r.role as "user" | "assistant",
             content: r.content,
           }))
+          console.log(`[v0] Loaded ${history.length} messages from conversation history`)
         } else if (historyError) {
           console.error("[v0] Failed to load history:", historyError)
         }
@@ -360,18 +393,26 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
             conversation_id: conversationId,
             role: "assistant",
             content: reply,
+            metadata: { model: "gpt-4o-mini" },
           })
           if (msgError) {
             console.error("[v0] Failed to store assistant message:", msgError)
+          } else {
+            console.log("[v0] Stored assistant message in conversation:", conversationId)
           }
           
-          // Update conversation updated_at
-          const { error: updateError } = await supabase
-            .from("conversations")
-            .update({ updated_at: new Date().toISOString() })
-            .eq("id", conversationId)
-          if (updateError) {
-            console.error("[v0] Failed to update conversation:", updateError)
+          // Update conversation updated_at (if column exists)
+          try {
+            const { error: updateError } = await supabase
+              .from("conversations")
+              .update({ updated_at: new Date().toISOString() })
+              .eq("id", conversationId)
+            if (updateError) {
+              // updated_at column might not exist, ignore error
+              console.log("[v0] Note: updated_at update failed (column may not exist):", updateError)
+            }
+          } catch (e) {
+            // Ignore - updated_at is optional
           }
         } catch (dbError: any) {
           console.error("[v0] Database error storing assistant message:", dbError)

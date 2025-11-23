@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabaseServer"
 import { cookies } from "next/headers"
+import { getLatestPriceForSymbols } from "@/lib/marketPrices"
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
 
     const { data: trades, error } = await supabase
       .from("trades")
-      .select("*, symbol_id, symbols(fmp_symbol, display_symbol)")
+      .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name)")
       .eq("user_id", userId)
       .order("opened_at", { ascending: false })
       .limit(100)
@@ -34,55 +35,69 @@ export async function GET(req: NextRequest) {
       }, { status: 500 })
     }
 
-    // Fetch live prices for open trades
-    const FMP_API_KEY = process.env.FMP_API_KEY
+    // Fetch live prices for open trades and calculate floating PnL
     const openTrades = trades?.filter((t) => t.status === "open") || []
     
-    if (FMP_API_KEY && openTrades.length > 0) {
-      // Fetch quotes for unique symbols
-      const uniqueSymbols = [...new Set(openTrades.map((t) => t.symbol).filter(Boolean))]
-      
-      const quotePromises = uniqueSymbols.map(async (symbol) => {
+    if (openTrades.length > 0) {
+      // Get unique symbols from open trades (use fmp_symbol if available via join, otherwise symbol)
+      const uniqueSymbols = [
+        ...new Set(
+          openTrades
+            .map((t) => {
+              // Prefer fmp_symbol from joined symbols table, fallback to symbol
+              const fmpSymbol = (t as any).symbols?.fmp_symbol
+              return fmpSymbol || t.symbol
+            })
+            .filter(Boolean)
+        ),
+      ]
+
+      if (uniqueSymbols.length > 0) {
         try {
-          // Use internal API route for quotes
-          const quoteUrl = new URL("/api/quote", req.nextUrl.origin)
-          quoteUrl.searchParams.set("symbol", symbol)
-          const quoteRes = await fetch(quoteUrl.toString())
-          if (quoteRes.ok) {
-            const quote = await quoteRes.json()
-            return { symbol, quote }
-          }
-        } catch (err) {
-          console.error(`[v0] Failed to fetch quote for ${symbol}:`, err)
-        }
-        return { symbol, quote: null }
-      })
+          const priceMap = await getLatestPriceForSymbols(uniqueSymbols)
 
-      const quotes = await Promise.all(quotePromises)
-      const quoteMap = new Map(quotes.map((q) => [q.symbol, q.quote]))
+          // Calculate floating PnL for each open trade
+          trades?.forEach((trade) => {
+            if (trade.status === "open" && trade.entry_price) {
+              const fmpSymbol = (trade as any).symbols?.fmp_symbol || trade.symbol
+              const currentPrice = priceMap[fmpSymbol]
 
-      // Calculate floating PnL for open trades
-      trades?.forEach((trade) => {
-        if (trade.status === "open" && trade.entry_price) {
-          const quote = quoteMap.get(trade.symbol)
-          if (quote && quote.price) {
-            const currentPrice = quote.price
-            const entry = parseFloat(trade.entry_price)
-            const sl = trade.sl ? parseFloat(trade.sl) : entry
-            const riskPerUnit = Math.abs(entry - sl)
-            
-            if (riskPerUnit > 0) {
-              const priceDiff = trade.direction === "long" 
-                ? currentPrice - entry 
-                : entry - currentPrice
-              const floatingR = priceDiff / riskPerUnit
-              trade.floating_r = floatingR
-              trade.floating_pnl_percent = (priceDiff / entry) * 100
-              trade.current_price = currentPrice
+              if (currentPrice && currentPrice > 0) {
+                const entry = typeof trade.entry_price === "number" 
+                  ? trade.entry_price 
+                  : parseFloat(String(trade.entry_price || "0"))
+                const sl = trade.sl 
+                  ? (typeof trade.sl === "number" ? trade.sl : parseFloat(String(trade.sl)))
+                  : entry
+                const riskPerUnit = Math.abs(entry - sl)
+
+                if (riskPerUnit > 0) {
+                  // Calculate R-multiple (floating)
+                  let openR = 0
+                  if (trade.direction === "long") {
+                    openR = (currentPrice - entry) / riskPerUnit
+                  } else {
+                    openR = (entry - currentPrice) / riskPerUnit
+                  }
+
+                  // Calculate PnL%
+                  const pnlPercent = trade.direction === "long"
+                    ? ((currentPrice - entry) / entry) * 100
+                    : ((entry - currentPrice) / entry) * 100
+
+                  // Attach to trade object
+                  ;(trade as any).floating_r = openR
+                  ;(trade as any).floating_pnl_percent = pnlPercent
+                  ;(trade as any).current_price = currentPrice
+                }
+              }
             }
-          }
+          })
+        } catch (err) {
+          console.error("[v0] Error fetching live prices for open trades:", err)
+          // Continue without live prices - trades will show without floating PnL
         }
-      })
+      }
     }
 
     // Calculate stats - null-safe

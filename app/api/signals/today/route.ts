@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabaseServer"
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const searchParams = req.nextUrl.searchParams
+    const limit = parseInt(searchParams.get("limit") || "50", 10)
+    const symbolId = searchParams.get("symbolId")
+
     let supabase
     try {
       supabase = supabaseServer()
@@ -15,7 +19,7 @@ export async function GET() {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    // Build query - try to join with symbols if symbol_id exists
+    // Build query - join with symbols if symbol_id exists
     let query = supabase
       .from("signals")
       .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
@@ -28,22 +32,8 @@ export async function GET() {
       query = query.eq("symbol_id", symbolId)
     }
 
-    // Filter by status if column exists (try-catch for backward compatibility)
-    try {
-      const { data: statusCheck } = await supabase
-        .from("signals")
-        .select("status")
-        .limit(1)
-        .maybeSingle()
-
-      if (statusCheck && statusCheck.status !== undefined && statusCheck.status !== null) {
-        // Status column exists, filter by active/pending
-        query = query.in("status", ["active", "pending"])
-      }
-    } catch (e) {
-      // Status column might not exist, continue without filter
-      console.log("[v0] Status column check failed, continuing without status filter")
-    }
+    // Filter by status if column exists (status column exists based on schema check)
+    query = query.in("status", ["active", "pending"])
 
     const { data, error } = await query
 

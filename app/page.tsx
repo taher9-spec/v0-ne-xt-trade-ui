@@ -120,12 +120,41 @@ export default function NextTradeUI() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const data = await getRealTimeQuotes(["BTCUSD", "ETHUSD", "AAPL", "NVDA", "TSLA"])
-      setQuotes(data)
+      try {
+        // Fetch market overview from API (uses DB symbols + FMP prices)
+        const overviewRes = await fetch("/api/market/overview", { cache: "no-store" })
+        if (overviewRes.ok) {
+          const { quotes } = await overviewRes.json()
+          if (quotes && quotes.length > 0) {
+            // Map to format expected by existing UI
+            const mappedQuotes = quotes.map((q: any) => ({
+              symbol: q.symbol,
+              name: q.name || q.displaySymbol,
+              price: q.price,
+              changesPercentage: q.changesPercentage || 0,
+              change: q.change || 0,
+              dayLow: q.dayLow || q.price * 0.99,
+              dayHigh: q.dayHigh || q.price * 1.01,
+              previousClose: q.previousClose || q.price,
+              timestamp: q.timestamp || Date.now() / 1000,
+            }))
+            setQuotes(mappedQuotes)
+            return
+          }
+        }
+        // Fallback to default symbols if API fails
+        const data = await getRealTimeQuotes(["BTCUSD", "ETHUSD", "AAPL", "NVDA", "TSLA"])
+        setQuotes(data)
+      } catch (e) {
+        console.error("[v0] Failed to fetch market overview:", e)
+        // Fallback
+        const data = await getRealTimeQuotes(["BTCUSD", "ETHUSD", "AAPL", "NVDA", "TSLA"])
+        setQuotes(data)
+      }
     }
     fetchData()
 
-    const interval = setInterval(fetchData, 10000)
+    const interval = setInterval(fetchData, 30000) // Poll every 30 seconds
     return () => clearInterval(interval)
   }, [])
 
@@ -718,26 +747,23 @@ export default function NextTradeUI() {
     const [loading, setLoading] = useState(false)
     const [conversationId, setConversationId] = useState<string | null>(null)
 
-    // Load latest conversation on mount (only for authenticated users)
+    // Load current conversation on mount (only once, stable)
     useEffect(() => {
-      if (!user) {
-        // Guest users start with welcome message only
-        return
-      }
+      let mounted = true
 
       ;(async () => {
         try {
-          const res = await fetch("/api/ai/conversation/latest", { cache: "no-store" })
-          if (!res.ok) {
-            console.log("[v0] No existing conversation found")
+          const res = await fetch("/api/ai/conversations/current", { cache: "no-store" })
+          if (!res.ok || !mounted) {
+            if (mounted) console.log("[v0] No existing conversation found")
             return
           }
           const data = await res.json()
-          if (data.conversation) {
+          if (mounted && data.conversation) {
             setConversationId(data.conversation.id)
             console.log("[v0] Loaded conversation:", data.conversation.id)
           }
-          if (data.messages && data.messages.length > 0) {
+          if (mounted && data.messages && data.messages.length > 0) {
             // Replace welcome message with loaded messages
             setMessages(
               data.messages.map((m: any) => ({
@@ -750,10 +776,14 @@ export default function NextTradeUI() {
             console.log("[v0] Loaded", data.messages.length, "messages from conversation")
           }
         } catch (e) {
-          console.error("[v0] Load last conversation failed", e)
+          if (mounted) console.error("[v0] Load current conversation failed", e)
         }
       })()
-    }, [user]) // Only reload when user changes
+
+      return () => {
+        mounted = false
+      }
+    }, []) // Only run once on mount - no dependencies
 
     const handleSend = async () => {
       if (!input.trim() || loading) return
@@ -815,6 +845,25 @@ export default function NextTradeUI() {
     }
 
     const handleClearChat = async () => {
+      try {
+        // Create a new conversation via API
+        const res = await fetch("/api/ai/conversations/new", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "New Conversation" }),
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          setConversationId(data.id)
+          console.log("[v0] Created new conversation:", data.id)
+        } else {
+          console.error("[v0] Failed to create new conversation")
+        }
+      } catch (e) {
+        console.error("[v0] Error creating new conversation:", e)
+      }
+
       // Reset UI immediately
       setMessages([
         {
@@ -823,11 +872,6 @@ export default function NextTradeUI() {
           content: "Hello! I'm your AI trading assistant. Ask me anything about market analysis, signal explanations, or trading strategies.",
         },
       ])
-      setConversationId(null)
-      
-      // For logged-in users, we'll create a new conversation on next message
-      // For guests, this is just a local reset
-      console.log("[v0] Chat cleared, new conversation will be created on next message")
     }
 
     return (

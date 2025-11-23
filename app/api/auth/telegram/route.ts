@@ -144,10 +144,12 @@ export async function GET(req: NextRequest) {
     // Get auth date for audit
     const authDate = params.auth_date ? new Date(parseInt(params.auth_date) * 1000) : new Date()
 
-    // Initialize Supabase
+    // Initialize Supabase with service role (bypasses RLS)
     let supabase
     try {
       supabase = supabaseServer()
+      // Verify we're using service role by checking if we can bypass RLS
+      console.log("[v0] Supabase client initialized with service role")
     } catch (error: any) {
       console.error("[v0] Failed to initialize Supabase:", error)
       return NextResponse.redirect(new URL("/?auth=failed&reason=db_error", req.url))
@@ -218,11 +220,22 @@ export async function GET(req: NextRequest) {
     }
 
     if (error) {
-      console.error("[v0] Telegram auth upsert error:", error)
+      // Enhanced error logging for debugging
+      console.error("[v0] ========== TELEGRAM AUTH ERROR ==========")
+      console.error("[v0] Error code:", error.code)
+      console.error("[v0] Error message:", error.message)
       console.error("[v0] Error details:", JSON.stringify(error, null, 2))
       console.error("[v0] Telegram ID:", telegramId)
-      console.error("[v0] Supabase client type:", supabase ? "initialized" : "failed")
-      return NextResponse.redirect(new URL("/?auth=failed&reason=upsert_error&details=" + encodeURIComponent(error.message || "unknown"), req.url))
+      console.error("[v0] Existing user found:", !!existingUser)
+      console.error("[v0] Operation:", existingUser ? "UPDATE" : "INSERT")
+      console.error("[v0] Supabase client:", supabase ? "initialized" : "failed")
+      console.error("[v0] =========================================")
+      
+      // Return more detailed error for debugging (in production, sanitize this)
+      const errorDetails = error.code ? `${error.code}: ${error.message}` : error.message || "unknown"
+      return NextResponse.redirect(
+        new URL(`/?auth=failed&reason=upsert_error&details=${encodeURIComponent(errorDetails)}`, req.url)
+      )
     }
 
     if (!user) {

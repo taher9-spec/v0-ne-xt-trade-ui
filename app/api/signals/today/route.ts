@@ -11,14 +11,15 @@ export async function GET() {
       return NextResponse.json({ error: "Database connection failed", details: error.message, signals: [] }, { status: 500 })
     }
 
-    // Fetch signals from today (last 24 hours)
+    // Fetch signals from today (last 24 hours) that are active or pending
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
     const { data, error } = await supabase
       .from("signals")
-      .select("*")
+      .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
       .gte("created_at", today.toISOString())
+      .in("status", ["active", "pending"])
       .order("created_at", { ascending: false })
 
     if (error) {

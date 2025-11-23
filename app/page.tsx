@@ -35,12 +35,21 @@ type Trade = {
   user_id: string
   signal_id: string | null
   symbol: string
+  symbol_id?: string | null
+  symbols?: {
+    fmp_symbol?: string
+    display_symbol?: string
+  } | null
   direction: string
   entry_price: number | null
   exit_price: number | null
   timeframe: string | null
   result_r: number | null
   pnl: number | null
+  pnl_percent?: number | null
+  floating_r?: number | null
+  floating_pnl_percent?: number | null
+  current_price?: number | null
   status: string
   opened_at: string
   closed_at: string | null
@@ -490,7 +499,7 @@ export default function NextTradeUI() {
 
       setLoading(true)
       try {
-        const res = await fetch("/api/trades/mark-taken", {
+        const res = await fetch("/api/trades/take", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ signalId: signal.id }),
@@ -533,8 +542,18 @@ export default function NextTradeUI() {
               <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
                 {signal.type}
               </Badge>
+              {signal.timeframe && (
+                <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
+                  {signal.timeframe}
+                </Badge>
+              )}
             </div>
-            <p className="text-xs text-zinc-500">{signal.reason_summary || "AI-powered signal"}</p>
+            <p className="text-xs text-zinc-500">
+              {signal.reason_summary || "AI-powered signal"}
+              {signal.engine_version && (
+                <span className="ml-2 text-zinc-600">• Engine {signal.engine_version}</span>
+              )}
+            </p>
           </div>
           <div className="flex items-center gap-1">
             {Array.from({ length: signal.confidence }).map((_, i) => (
@@ -647,13 +666,39 @@ export default function NextTradeUI() {
                       {trade.exit_price && ` • Exit: ${trade.exit_price.toFixed(2)}`}
                     </p>
                   </div>
-                  {trade.result_r !== null && (
-                    <div className={`text-right ${trade.result_r >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      <p className="text-lg font-bold">
-                        {trade.result_r > 0 ? "+" : ""}
-                        {trade.result_r.toFixed(2)}R
-                      </p>
-                      {trade.pnl && <p className="text-xs">${trade.pnl.toFixed(2)}</p>}
+                  {(trade.result_r !== null || trade.floating_r !== null) && (
+                    <div className={`text-right ${(trade.result_r ?? trade.floating_r ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {trade.status === "open" && trade.floating_r !== null ? (
+                        <>
+                          <p className="text-lg font-bold">
+                            {trade.floating_r > 0 ? "+" : ""}
+                            {trade.floating_r.toFixed(2)}R
+                          </p>
+                          {trade.floating_pnl_percent !== null && (
+                            <p className="text-xs">
+                              {trade.floating_pnl_percent > 0 ? "+" : ""}
+                              {trade.floating_pnl_percent.toFixed(2)}%
+                            </p>
+                          )}
+                          {trade.current_price && (
+                            <p className="text-[10px] text-zinc-500 mt-1">${trade.current_price.toFixed(2)}</p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg font-bold">
+                            {trade.result_r && trade.result_r > 0 ? "+" : ""}
+                            {trade.result_r?.toFixed(2) || "0.00"}R
+                          </p>
+                          {trade.pnl && <p className="text-xs">${trade.pnl.toFixed(2)}</p>}
+                          {trade.pnl_percent !== null && (
+                            <p className="text-xs">
+                              {trade.pnl_percent > 0 ? "+" : ""}
+                              {trade.pnl_percent.toFixed(2)}%
+                            </p>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

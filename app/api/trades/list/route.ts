@@ -21,7 +21,7 @@ export async function GET() {
 
     const { data: trades, error } = await supabase
       .from("trades")
-      .select("*")
+      .select("*, symbol_id, symbols(fmp_symbol, display_symbol)")
       .eq("user_id", userId)
       .order("opened_at", { ascending: false })
       .limit(100)
@@ -32,6 +32,54 @@ export async function GET() {
         error: "Failed to fetch trades", 
         details: error.message 
       }, { status: 500 })
+    }
+
+    // Fetch live prices for open trades
+    const FMP_API_KEY = process.env.FMP_API_KEY
+    const openTrades = trades?.filter((t) => t.status === "open") || []
+    
+    if (FMP_API_KEY && openTrades.length > 0) {
+      // Fetch quotes for unique symbols
+      const uniqueSymbols = [...new Set(openTrades.map((t) => t.symbol).filter(Boolean))]
+      
+      const quotePromises = uniqueSymbols.map(async (symbol) => {
+        try {
+          const quoteRes = await fetch(`${req.nextUrl.origin}/api/quote?symbol=${symbol}`)
+          if (quoteRes.ok) {
+            const quote = await quoteRes.json()
+            return { symbol, quote }
+          }
+        } catch (err) {
+          console.error(`[v0] Failed to fetch quote for ${symbol}:`, err)
+        }
+        return { symbol, quote: null }
+      })
+
+      const quotes = await Promise.all(quotePromises)
+      const quoteMap = new Map(quotes.map((q) => [q.symbol, q.quote]))
+
+      // Calculate floating PnL for open trades
+      trades?.forEach((trade) => {
+        if (trade.status === "open" && trade.entry_price) {
+          const quote = quoteMap.get(trade.symbol)
+          if (quote && quote.price) {
+            const currentPrice = quote.price
+            const entry = parseFloat(trade.entry_price)
+            const sl = trade.sl ? parseFloat(trade.sl) : entry
+            const riskPerUnit = Math.abs(entry - sl)
+            
+            if (riskPerUnit > 0) {
+              const priceDiff = trade.direction === "long" 
+                ? currentPrice - entry 
+                : entry - currentPrice
+              const floatingR = priceDiff / riskPerUnit
+              trade.floating_r = floatingR
+              trade.floating_pnl_percent = (priceDiff / entry) * 100
+              trade.current_price = currentPrice
+            }
+          }
+        }
+      })
     }
 
     // Calculate stats

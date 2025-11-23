@@ -296,19 +296,30 @@ Be concise, helpful, and focus on practical trading advice. Always remind users 
 
       console.log("[v0] OpenAI response received successfully")
       
-      // Store assistant message in database
+      // Store assistant message in database (gracefully handle errors)
       if (supabase && conversationId && reply) {
-        await supabase.from("messages").insert({
-          conversation_id: conversationId,
-          role: "assistant",
-          content: reply,
-        })
-        
-        // Update conversation updated_at
-        await supabase
-          .from("conversations")
-          .update({ updated_at: new Date().toISOString() })
-          .eq("id", conversationId)
+        try {
+          const { error: msgError } = await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            role: "assistant",
+            content: reply,
+          })
+          if (msgError) {
+            console.error("[v0] Failed to store assistant message:", msgError)
+          }
+          
+          // Update conversation updated_at
+          const { error: updateError } = await supabase
+            .from("conversations")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", conversationId)
+          if (updateError) {
+            console.error("[v0] Failed to update conversation:", updateError)
+          }
+        } catch (dbError: any) {
+          console.error("[v0] Database error storing assistant message:", dbError)
+          // Continue - message storage is optional, AI response is already generated
+        }
       }
       
       return NextResponse.json({ 

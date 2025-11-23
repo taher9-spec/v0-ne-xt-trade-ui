@@ -13,6 +13,7 @@ import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts"
 import { TelegramLoginButton } from "@/components/TelegramLoginButton"
 import { LogOut, Check } from "lucide-react"
 import Image from "next/image"
+import { isTelegramWebApp, getTelegramInitData } from "@/lib/telegramWebApp"
 
 type Signal = {
   id: string
@@ -244,7 +245,7 @@ export default function NextTradeUI() {
     if (activeTab === "account" && !authLoading) {
       const checkAuth = async () => {
         try {
-          const res = await fetch("/api/me")
+          const res = await fetch("/api/me", { cache: "no-store" })
           if (res.ok) {
             const json = await res.json()
             setUser(json.user || null)
@@ -257,7 +258,51 @@ export default function NextTradeUI() {
       const timeoutId = setTimeout(checkAuth, 100)
       return () => clearTimeout(timeoutId)
     }
-  }, [activeTab]) // Removed authLoading from deps to prevent loops
+  }, [activeTab, authLoading])
+
+  // Handle Telegram WebApp authentication (when opened from Telegram Mini App)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (user) return // Already authenticated, don't re-authenticate
+
+    // @ts-ignore - Telegram WebApp is injected by Telegram
+    const tg = window.Telegram?.WebApp
+    if (!tg || !tg.initData) return
+
+    const initData = tg.initData
+    if (!initData) return
+
+    console.log("[v0] Telegram WebApp detected, authenticating with initData...")
+    setAuthLoading(true)
+
+    // Authenticate using initData
+    fetch("/api/auth/telegram-webapp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initData }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({}))
+          throw new Error(error.error || `Auth failed: ${res.status}`)
+        }
+        return res.json()
+      })
+      .then((data) => {
+        console.log("[v0] WebApp auth successful:", data.user)
+        if (data.user) {
+          setUser(data.user)
+        }
+      })
+      .catch((err) => {
+        console.error("[v0] WebApp auth error:", err)
+        // Don't show error to user - they can still use the widget if needed
+        // The widget will show for desktop users
+      })
+      .finally(() => {
+        setAuthLoading(false)
+      })
+  }, [user]) // Only run if user is not already authenticated
 
   const mainQuote = quotes.find((q) => q.symbol === selectedSymbol) || { price: 0, changesPercentage: 0 }
 
@@ -774,15 +819,34 @@ export default function NextTradeUI() {
     }
 
     if (!user) {
+      // Check if we're inside Telegram WebApp
+      const insideTelegram = isTelegramWebApp()
+
       return (
         <div className="space-y-6 pb-20">
           <header className="pt-2">
             <h1 className="text-xl font-bold">Account</h1>
-            <p className="text-xs text-zinc-500">Sign in to continue</p>
+            <p className="text-xs text-zinc-500">
+              {insideTelegram ? "Connecting to Telegram..." : "Sign in to continue"}
+            </p>
           </header>
 
           <Card className="p-6 bg-zinc-950 border-zinc-800">
-            <TelegramLoginButton />
+            {insideTelegram ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center animate-pulse">
+                  <UserIcon className="w-6 h-6 text-white" />
+                </div>
+                <p className="text-sm text-zinc-400 text-center">
+                  Authenticating with Telegram...
+                </p>
+                <p className="text-xs text-zinc-500 text-center">
+                  Please wait while we connect your account
+                </p>
+              </div>
+            ) : (
+              <TelegramLoginButton />
+            )}
           </Card>
 
           <section>

@@ -16,14 +16,19 @@ export function TelegramLoginButton() {
     }
 
     // Create script element for Telegram widget
+    // Official Telegram Login Widget documentation: https://core.telegram.org/widgets/login
     const script = document.createElement("script")
     script.src = "https://telegram.org/js/telegram-widget.js?22"
     script.async = true
     script.setAttribute("data-telegram-login", "nexttrade_SIGNAL_bot")
     script.setAttribute("data-size", "large")
-    script.setAttribute("data-userpic", "false")
+    script.setAttribute("data-userpic", "true") // Show user photo in widget
     script.setAttribute("data-request-access", "write")
-    script.setAttribute("data-auth-url", window.location.origin + "/api/auth/telegram")
+    // data-auth-url: URL where Telegram will send the authentication data via GET request
+    // Must be an absolute URL (same origin or configured in BotFather)
+    const authUrl = window.location.origin + "/api/auth/telegram"
+    script.setAttribute("data-auth-url", authUrl)
+    console.log("[v0] Telegram Login Widget configured with auth URL:", authUrl)
     
     script.onerror = () => {
       console.error("[v0] Failed to load Telegram widget script")

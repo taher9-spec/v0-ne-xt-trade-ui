@@ -215,16 +215,26 @@ export default function NextTradeUI() {
     const urlParams = new URLSearchParams(window.location.search)
     const authStatus = urlParams.get("auth")
     if (authStatus === "success") {
-      // Refresh user data after successful login
-      setTimeout(() => {
-        checkAuth()
-        // Clean URL
+      console.log("[v0] Telegram authentication successful, refreshing user data...")
+      // Refresh user data after successful login with a small delay to ensure cookie is set
+      setTimeout(async () => {
+        try {
+          const res = await fetch("/api/me", { cache: "no-store" })
+          if (res.ok) {
+            const json = await res.json()
+            console.log("[v0] User data refreshed:", json.user)
+            setUser(json.user || null)
+          }
+        } catch (err) {
+          console.error("[v0] Error refreshing user after auth:", err)
+        }
+        // Clean URL parameters
         window.history.replaceState({}, "", window.location.pathname)
-      }, 500)
+      }, 300)
     } else if (authStatus === "failed") {
       const reason = urlParams.get("reason")
-      console.error("[v0] Auth failed:", reason)
-      // Clean URL
+      console.error("[v0] Telegram authentication failed:", reason)
+      // Clean URL parameters
       window.history.replaceState({}, "", window.location.pathname)
     }
   }, [])
@@ -849,10 +859,13 @@ export default function NextTradeUI() {
         <Card className="p-4 bg-zinc-950 border-zinc-800">
           <div className="flex items-center gap-3 mb-4">
             {user.photo_url ? (
-              <img
+              <Image
                 src={user.photo_url}
-                alt={user.username || "User"}
+                alt={user.full_name || user.username || "User"}
+                width={56}
+                height={56}
                 className="w-14 h-14 rounded-full border-2 border-zinc-800 object-cover"
+                unoptimized // Telegram CDN images may not be optimized by Next.js
                 onError={(e) => {
                   // Fallback to placeholder if image fails to load
                   const target = e.target as HTMLImageElement
@@ -866,8 +879,10 @@ export default function NextTradeUI() {
               {user.username?.[0]?.toUpperCase() || user.full_name?.[0]?.toUpperCase() || "T"}
             </div>
             <div className="flex-1">
-              <p className="font-bold">{user.username || "Trader User"}</p>
-              <p className="text-xs text-zinc-500">@{user.username || "trader"}</p>
+              <p className="font-bold">{user.full_name || user.username || "Trader User"}</p>
+              <p className="text-xs text-zinc-500">
+                {user.username ? `@${user.username}` : user.telegram_id ? `ID: ${user.telegram_id}` : "Trader"}
+              </p>
             </div>
             <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
               <Check className="w-4 h-4 text-black font-bold" />

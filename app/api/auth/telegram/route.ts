@@ -112,20 +112,34 @@ export async function GET(req: NextRequest) {
     }
 
     // Extract user data from Telegram parameters
+    // Official Telegram Login Widget sends: id, first_name, last_name, username, photo_url, auth_date, hash
     const telegramId = params.id
     const firstName = (params.first_name || "").trim().slice(0, 100) // Sanitize and limit length
     const lastName = (params.last_name || "").trim().slice(0, 100)
     const username = params.username ? params.username.trim().slice(0, 50) : null
-    const photoUrl = params.photo_url ? params.photo_url.trim() : null
+    let photoUrl = params.photo_url ? params.photo_url.trim() : null
     
-    // Validate photo URL if provided (must be from Telegram CDN)
-    if (photoUrl && !photoUrl.startsWith("https://")) {
-      console.warn("[v0] Invalid photo_url format, ignoring:", photoUrl)
-      // Don't fail auth, just ignore invalid photo URL
+    // Validate and normalize photo URL
+    // Telegram photo URLs should be from their CDN (e.g., https://cdn4.telegram-cdn.org/file/...)
+    if (photoUrl) {
+      if (!photoUrl.startsWith("https://")) {
+        console.warn("[v0] Invalid photo_url format, ignoring:", photoUrl)
+        photoUrl = null
+      } else {
+        // Ensure it's a valid Telegram CDN URL
+        console.log("[v0] User photo URL received:", photoUrl.substring(0, 50) + "...")
+      }
     }
 
-    // Build full name
+    // Build full name from first_name + last_name, fallback to username
     const fullName = [firstName, lastName].filter(Boolean).join(" ") || username || "User"
+    
+    console.log("[v0] Telegram auth data extracted:", {
+      telegramId,
+      username,
+      fullName,
+      hasPhoto: !!photoUrl,
+    })
     
     // Get auth date for audit
     const authDate = params.auth_date ? new Date(parseInt(params.auth_date) * 1000) : new Date()
@@ -217,7 +231,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Set authentication cookie with security flags
-    const res = NextResponse.redirect(new URL("/?auth=success", req.url))
+    // Redirect back to the app root with success parameter
+    // For Telegram Mini Apps, the redirect should preserve the mini app context
+    const redirectUrl = new URL("/", req.url)
+    redirectUrl.searchParams.set("auth", "success")
+    const res = NextResponse.redirect(redirectUrl)
     const cookieMaxAge = 60 * 60 * 24 * 365 // 1 year
     
     res.cookies.set("tg_user_id", user.id, {

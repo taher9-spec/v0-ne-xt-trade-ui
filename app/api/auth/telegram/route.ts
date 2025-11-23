@@ -140,13 +140,17 @@ export async function GET(req: NextRequest) {
     }
 
     // Upsert user data with security fields
-    // Use raw SQL to avoid schema cache issues
     // First, try to find existing user by telegram_id
-    const { data: existingUser } = await supabase
+    // Use maybeSingle() to avoid errors if user doesn't exist
+    const { data: existingUser, error: findError } = await supabase
       .from("users")
       .select("id")
       .eq("telegram_id", telegramId)
       .maybeSingle()
+    
+    if (findError) {
+      console.error("[v0] Error finding existing user:", findError)
+    }
 
     let user
     let error

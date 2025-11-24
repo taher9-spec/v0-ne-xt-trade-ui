@@ -133,11 +133,14 @@ export default function SignalsPage() {
     const entry = signal.entry || signal.entry_price || 0
     const stopLoss = signal.sl || signal.stop_loss || 0
     const target = signal.tp1 || signal.target_price || null
-    const direction = (signal.direction || "").toLowerCase()
+    // Handle both "LONG"/"SHORT" and "long"/"short" from database
+    const direction = typeof signal.direction === "string" 
+      ? signal.direction.toLowerCase() 
+      : "long"
     const timestamp = signal.activated_at || signal.created_at
 
     return (
-      <Card key={signal.id} className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
+      <Card className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">

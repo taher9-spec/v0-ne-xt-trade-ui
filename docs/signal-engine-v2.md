@@ -270,9 +270,11 @@ Required in Supabase Edge Function secrets:
 ## Monitoring
 
 ### Edge Function Logs
+
 View logs in **Supabase Dashboard** → **Edge Functions** → **smart-endpoint** → **Logs**
 
 ### Key Metrics to Monitor
+
 - `evaluated`: Total symbol×timeframe combinations processed
 - `inserted`: New signals created
 - `updated`: Existing signals updated (higher score)

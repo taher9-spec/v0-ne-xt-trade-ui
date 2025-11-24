@@ -28,6 +28,7 @@ const FRESHNESS_WINDOWS: Record<string, number> = {
 
 /**
  * Fetch technical indicator from FMP stable API
+ * Note: Only used for EMA now, RSI is calculated locally
  */
 async function fetchFmpIndicator(
   symbol: string,
@@ -41,18 +42,34 @@ async function fetchFmpIndicator(
   }
 
   try {
-    const url = `${FMP_BASE}/stable/technical-indicators/${indicator}?symbol=${encodeURIComponent(symbol)}&periodLength=${periodLength}&timeframe=${timeframe}&apikey=${FMP_API_KEY}`
+    // Map timeframe to FMP format for technical indicators
+    // FMP technical indicators API expects: 1min, 5min, 15min, 30min, 1hour, 4hour, 1day
+    let fmpTimeframe = timeframe
+    if (timeframe === "1min") fmpTimeframe = "1min"
+    else if (timeframe === "5min") fmpTimeframe = "5min"
+    else if (timeframe === "15min") fmpTimeframe = "15min"
+    else if (timeframe === "1h") fmpTimeframe = "1hour"
+    else if (timeframe === "4h") fmpTimeframe = "4hour"
+    else if (timeframe === "1day") fmpTimeframe = "1day"
+    else {
+      console.error(`[smart-endpoint] Unsupported timeframe for indicators: ${timeframe}`)
+      return null
+    }
+
+    const url = `${FMP_BASE}/stable/technical-indicators/${indicator}?symbol=${encodeURIComponent(symbol)}&periodLength=${periodLength}&timeframe=${fmpTimeframe}&apikey=${FMP_API_KEY}`
     const response = await fetch(url, {
       headers: { "Accept": "application/json" },
     })
 
     if (!response.ok) {
-      console.error(`[smart-endpoint] FMP ${indicator} API error for ${symbol}: ${response.status}`)
+      const errorText = await response.text().catch(() => "")
+      console.error(`[smart-endpoint] FMP ${indicator} API error for ${symbol} ${timeframe}: ${response.status} - ${errorText.substring(0, 200)}`)
       return null
     }
 
     const data = await response.json()
     if (!Array.isArray(data) || data.length === 0) {
+      console.warn(`[smart-endpoint] FMP ${indicator} returned empty data for ${symbol} ${timeframe}`)
       return null
     }
 
@@ -63,7 +80,7 @@ async function fetchFmpIndicator(
       return dateA - dateB
     })
   } catch (error) {
-    console.error(`[smart-endpoint] Error fetching ${indicator} for ${symbol}:`, error)
+    console.error(`[smart-endpoint] Error fetching ${indicator} for ${symbol} ${timeframe}:`, error)
     return null
   }
 }
@@ -409,22 +426,61 @@ async function buildSignalFromFmp(
     fetchHistoricalCandles(symbol, timeframe, 200),
   ])
 
-  // Validate data
-  if (!ema20Data || ema20Data.length === 0) {
-    console.error(`[smart-endpoint] Missing EMA20 data for ${symbol} ${timeframe}`)
-    return null
+  // Validate EMA data - if FMP fails, calculate locally as fallback
+  let ema20Now: number
+  let ema50Now: number
+  let ema200Now: number
+
+  if (ema20Data && ema20Data.length > 0) {
+    ema20Now = parseFloat(ema20Data[ema20Data.length - 1].ema || "0")
+  } else {
+    // Fallback: calculate EMA20 locally
+    const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
+    const ema20Local = ema(closePrices, 20)
+    if (ema20Local.length === 0) {
+      console.error(`[smart-endpoint] Cannot calculate EMA20 locally for ${symbol} ${timeframe}`)
+      return null
+    }
+    ema20Now = ema20Local[ema20Local.length - 1]
+    console.warn(`[smart-endpoint] Using local EMA20 calculation for ${symbol} ${timeframe}`)
   }
-  if (!ema50Data || ema50Data.length === 0) {
-    console.error(`[smart-endpoint] Missing EMA50 data for ${symbol} ${timeframe}`)
-    return null
+
+  if (ema50Data && ema50Data.length > 0) {
+    ema50Now = parseFloat(ema50Data[ema50Data.length - 1].ema || "0")
+  } else {
+    // Fallback: calculate EMA50 locally
+    const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
+    const ema50Local = ema(closePrices, 50)
+    if (ema50Local.length === 0) {
+      console.error(`[smart-endpoint] Cannot calculate EMA50 locally for ${symbol} ${timeframe}`)
+      return null
+    }
+    ema50Now = ema50Local[ema50Local.length - 1]
+    console.warn(`[smart-endpoint] Using local EMA50 calculation for ${symbol} ${timeframe}`)
   }
-  if (!ema200Data || ema200Data.length === 0) {
-    console.error(`[smart-endpoint] Missing EMA200 data for ${symbol} ${timeframe}`)
-    return null
+
+  if (ema200Data && ema200Data.length > 0) {
+    ema200Now = parseFloat(ema200Data[ema200Data.length - 1].ema || "0")
+  } else {
+    // Fallback: calculate EMA200 locally
+    const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
+    const ema200Local = ema(closePrices, 200)
+    if (ema200Local.length === 0) {
+      console.error(`[smart-endpoint] Cannot calculate EMA200 locally for ${symbol} ${timeframe}`)
+      return null
+    }
+    ema200Now = ema200Local[ema200Local.length - 1]
+    console.warn(`[smart-endpoint] Using local EMA200 calculation for ${symbol} ${timeframe}`)
   }
-  if (!candles || candles.length < 200) {
-    console.error(`[smart-endpoint] Missing or insufficient candle data for ${symbol} ${timeframe} (got ${candles?.length || 0}, need 200)`)
-    return null
+  // Require at least 200 candles for reliable indicator calculations
+  // But allow slightly less if we have enough for basic calculations
+  const minCandles = 200
+  if (!candles || candles.length < minCandles) {
+    console.warn(`[smart-endpoint] Insufficient candle data for ${symbol} ${timeframe} (got ${candles?.length || 0}, need ${minCandles})`)
+    // Try with what we have if it's close (e.g., 150+ candles)
+    if (!candles || candles.length < 150) {
+      return null
+    }
   }
 
   // Get latest values
@@ -434,9 +490,7 @@ async function buildSignalFromFmp(
   const low = parseFloat(candles[latest].low || candles[latest].l || "0")
   const volume = parseFloat(candles[latest].volume || candles[latest].v || "0")
 
-  const ema20Now = parseFloat(ema20Data[ema20Data.length - 1].ema || "0")
-  const ema50Now = parseFloat(ema50Data[ema50Data.length - 1].ema || "0")
-  const ema200Now = parseFloat(ema200Data[ema200Data.length - 1].ema || "0")
+  // EMA values are already calculated above with fallback logic
 
   // Extract price arrays for local calculations
   const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))

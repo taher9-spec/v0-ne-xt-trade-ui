@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { TrendingUp, TrendingDown, Coins, DollarSign, BarChart3, Building2, ArrowLeft, Sparkles, Home, BookOpen, Bot, UserIcon } from "lucide-react"
+import { TrendingUp, TrendingDown, Coins, DollarSign, BarChart3, Building2, ArrowLeft, Sparkles, Home, BookOpen, Bot, UserIcon, Star } from "lucide-react"
 import Link from "next/link"
 import { getSymbolLogo } from "@/lib/utils/symbolLogos"
 import { isSymbolUnlocked, getRequiredPlanForSymbol } from "@/lib/utils/planSymbols"
@@ -85,22 +85,76 @@ export default function SymbolsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedAssetClass, setSelectedAssetClass] = useState<string>("all")
   const [user, setUser] = useState<{ plan_code: string | null } | null>(null)
+  const [favorites, setFavorites] = useState<Set<string>>(new Set())
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
 
-  // Fetch user plan
+  // Fetch user plan and favorites
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchUserAndFavorites = async () => {
       try {
         const res = await fetch("/api/me", { cache: "no-store" })
         if (res.ok) {
           const json = await res.json()
           setUser(json.user || null)
+          
+          // If user is logged in, fetch favorites
+          if (json.user) {
+            const favRes = await fetch("/api/favorites", { cache: "no-store" })
+            if (favRes.ok) {
+              const favJson = await favRes.json()
+              const favIds = new Set<string>(favJson.favorites?.map((f: any) => f.symbol_id) || [])
+              setFavorites(favIds)
+            }
+          }
         }
       } catch (e) {
         // Silent fail - user might not be logged in
       }
     }
-    fetchUser()
+    fetchUserAndFavorites()
   }, [])
+
+  // Toggle favorite
+  const toggleFavorite = async (symbolId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!user) return // Must be logged in
+    
+    const isFavorite = favorites.has(symbolId)
+    
+    // Optimistic update
+    setFavorites(prev => {
+      const next = new Set(prev)
+      if (isFavorite) {
+        next.delete(symbolId)
+      } else {
+        next.add(symbolId)
+      }
+      return next
+    })
+    
+    try {
+      if (isFavorite) {
+        await fetch(`/api/favorites?symbolId=${symbolId}`, { method: "DELETE" })
+      } else {
+        await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbolId })
+        })
+      }
+    } catch (e) {
+      // Revert on error
+      setFavorites(prev => {
+        const next = new Set(prev)
+        if (isFavorite) {
+          next.add(symbolId)
+        } else {
+          next.delete(symbolId)
+        }
+        return next
+      })
+    }
+  }
 
   // Fetch symbols
   useEffect(() => {
@@ -265,9 +319,13 @@ export default function SymbolsPage() {
     fetchPricesAndSignals()
   }, [symbols])
 
-  // Filter and sort symbols: unlocked first, then locked
+  // Filter and sort symbols: favorites first, then unlocked, then locked
   const filteredSymbols = symbolsWithData
     .filter((s) => {
+      // Filter by favorites if enabled
+      if (showFavoritesOnly && !favorites.has(s.id)) {
+        return false
+      }
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase()
         if (
@@ -284,11 +342,18 @@ export default function SymbolsPage() {
       return true
     })
     .sort((a, b) => {
+      // Favorites first
+      const aFav = favorites.has(a.id)
+      const bFav = favorites.has(b.id)
+      if (aFav !== bFav) return aFav ? -1 : 1
+      
+      // Then unlocked
       const planCode = user?.plan_code || null
       const aUnlocked = isSymbolUnlocked(a.display_symbol || a.fmp_symbol, planCode)
       const bUnlocked = isSymbolUnlocked(b.display_symbol || b.fmp_symbol, planCode)
-      if (aUnlocked === bUnlocked) return 0
-      return aUnlocked ? -1 : 1
+      if (aUnlocked !== bUnlocked) return aUnlocked ? -1 : 1
+      
+      return 0
     })
 
   const assetClasses = Array.from(new Set(symbols.map((s) => s.asset_class)))
@@ -358,6 +423,20 @@ export default function SymbolsPage() {
         {/* Asset Class Filters */}
         <div className="mb-6">
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {/* Favorites filter - only show if user is logged in */}
+            {user && (
+              <button
+                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 ${
+                  showFavoritesOnly
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
+                    : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800 border border-transparent"
+                }`}
+              >
+                <Star className={`w-4 h-4 ${showFavoritesOnly ? "fill-amber-400" : ""}`} />
+                <span className="text-xs">{favorites.size}</span>
+              </button>
+            )}
             <button
               onClick={() => setSelectedAssetClass("all")}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
@@ -414,6 +493,9 @@ export default function SymbolsPage() {
                   symbolUnlocked={symbolUnlocked}
                   requiredPlan={requiredPlan}
                   onSymbolClick={handleSymbolClick}
+                  isFavorite={favorites.has(symbol.id)}
+                  onToggleFavorite={toggleFavorite}
+                  isLoggedIn={!!user}
                 />
               )
             })}
@@ -462,7 +544,10 @@ function SymbolCard({
   logoUrl, 
   symbolUnlocked, 
   requiredPlan,
-  onSymbolClick 
+  onSymbolClick,
+  isFavorite,
+  onToggleFavorite,
+  isLoggedIn
 }: { 
   symbol: SymbolWithPrice
   Icon: any
@@ -471,6 +556,9 @@ function SymbolCard({
   symbolUnlocked: boolean
   requiredPlan: string
   onSymbolClick: (symbol: SymbolWithPrice) => void
+  isFavorite: boolean
+  onToggleFavorite: (symbolId: string, e: React.MouseEvent) => void
+  isLoggedIn: boolean
 }) {
   const [logoError, setLogoError] = useState(false)
 
@@ -479,9 +567,13 @@ function SymbolCard({
     ? (symbol.priceChangePercent > 0 ? 'bullish' : symbol.priceChangePercent < 0 ? 'bearish' : 'neutral')
     : 'neutral'
   
-  // Volatility indicator (0-100 scale)
-  const volatilityLevel = symbol.volatility ? Math.min(100, Math.max(0, symbol.volatility)) : 0
-  const volatilityColor = volatilityLevel > 70 ? 'rose' : volatilityLevel > 40 ? 'yellow' : 'emerald'
+  // Volatility indicator based on actual price change percentage (0-100 scale)
+  // Scale: 0% change = 0, 5%+ change = 100
+  const actualVolatility = symbol.priceChangePercent !== null 
+    ? Math.min(100, Math.abs(symbol.priceChangePercent) * 20) 
+    : 0
+  const volatilityLevel = Math.max(5, actualVolatility) // Minimum 5% height for visibility
+  const volatilityColor = actualVolatility > 60 ? 'rose' : actualVolatility > 30 ? 'yellow' : 'emerald'
 
   return (
     <Card
@@ -512,6 +604,20 @@ function SymbolCard({
           style={{ height: `${volatilityLevel}%` }}
         />
       </div>
+      
+      {/* Favorite button - subtle star in top left */}
+      {isLoggedIn && (
+        <button
+          onClick={(e) => onToggleFavorite(symbol.id, e)}
+          className={`absolute top-2 left-2 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+            isFavorite 
+              ? "text-amber-400" 
+              : "text-zinc-600 hover:text-zinc-400"
+          }`}
+        >
+          <Star className={`w-4 h-4 transition-all ${isFavorite ? "fill-amber-400" : ""}`} />
+        </button>
+      )}
       
       {/* Lock overlay for locked symbols */}
       {!symbolUnlocked && (

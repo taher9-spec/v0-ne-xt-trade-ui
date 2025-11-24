@@ -568,6 +568,7 @@ export default function NextTradeUI() {
     const [checkingTrade, setCheckingTrade] = useState(true)
     const [currentPrice, setCurrentPrice] = useState<number | null>(null)
     const [priceChange, setPriceChange] = useState<number | null>(null)
+    const [showConfluence, setShowConfluence] = useState(false)
     
     // Check if signal is unlocked for user's plan
     const planCode = user?.plan_code || null
@@ -882,42 +883,93 @@ export default function NextTradeUI() {
                 </div>
               </div>
               
-              {/* Signal Type Badge */}
-              {(signal as any).signal_type && (
-                <Badge variant="outline" className="h-7 px-2.5 text-[10px] border-zinc-700/50 text-zinc-400 bg-zinc-900/80 backdrop-blur-sm uppercase">
-                  {(signal as any).signal_type}
-                </Badge>
-              )}
-
+              {/* Timeframe Badge */}
               {signal.timeframe && (
-                <Badge variant="outline" className={`h-7 px-2.5 text-[10px] backdrop-blur-sm ${timeframeStyle.badge}`}>
+                <Badge variant="outline" className={`h-6 px-2 text-[10px] backdrop-blur-sm ${timeframeStyle.badge}`}>
                   {signal.timeframe.toUpperCase()}
                 </Badge>
               )}
-              
-              {/* Quality Tier Badge */}
-              {(signal as any).quality_tier && (
-                <Badge variant="outline" className={`h-7 px-2.5 text-[10px] border-amber-500/30 bg-amber-500/10 text-amber-400 backdrop-blur-sm`}>
-                  TIER {(signal as any).quality_tier}
-                </Badge>
-              )}
-
-              {/* Direction arrow - prominent visual indicator */}
-              <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                direction === "long"
-                  ? "bg-emerald-500/20 border border-emerald-500/40"
-                  : "bg-rose-500/20 border border-rose-500/40"
-              }`}>
-                {direction === "long" ? (
-                  <TrendingUp className="w-5 h-5 text-emerald-400" />
-                ) : (
-                  <TrendingDown className="w-5 h-5 text-rose-400" />
+            </div>
+            
+            {/* Confluence Button - replaces messy text */}
+            {((signal as any).explanation || signal.reason_summary) && (
+              <div className="mt-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowConfluence(!showConfluence) }}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] bg-zinc-800/80 border border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-all"
+                >
+                  <Target className="w-3 h-3" />
+                  <span>Confluence</span>
+                  <span className={`transition-transform ${showConfluence ? 'rotate-180' : ''}`}>▾</span>
+                </button>
+                {showConfluence && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800 text-[10px] space-y-1.5">
+                    {/* Parse and display factors in organized way */}
+                    {(() => {
+                      const explanation = (signal as any).explanation || signal.reason_summary || ""
+                      const factors = (signal as any).factors || {}
+                      const regime = (signal as any).regime
+                      const score = signal.score
+                      
+                      // Extract percentages from explanation if factors not available
+                      const trendMatch = explanation.match(/Trend:\s*(\d+)%/)
+                      const momMatch = explanation.match(/Mom:\s*(\d+)%/)
+                      const volMatch = explanation.match(/Vol:\s*(\d+)%/)
+                      
+                      return (
+                        <>
+                          {regime && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-zinc-500">Regime</span>
+                              <span className="text-zinc-200 uppercase font-medium">{regime}</span>
+                            </div>
+                          )}
+                          {score !== null && score !== undefined && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-zinc-500">Score</span>
+                              <span className={`font-bold ${score >= 70 ? 'text-emerald-400' : score >= 60 ? 'text-yellow-400' : 'text-rose-400'}`}>{Math.round(score)}/100</span>
+                            </div>
+                          )}
+                          {trendMatch && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-zinc-500">Trend</span>
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-12 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                                  <div className="h-full bg-emerald-500" style={{ width: `${trendMatch[1]}%` }} />
+                                </div>
+                                <span className="text-zinc-300 w-8 text-right">{trendMatch[1]}%</span>
+                              </div>
+                            </div>
+                          )}
+                          {momMatch && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-zinc-500">Momentum</span>
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-12 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-500" style={{ width: `${momMatch[1]}%` }} />
+                                </div>
+                                <span className="text-zinc-300 w-8 text-right">{momMatch[1]}%</span>
+                              </div>
+                            </div>
+                          )}
+                          {volMatch && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-zinc-500">Volume</span>
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-12 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                                  <div className="h-full bg-purple-500" style={{ width: `${volMatch[1]}%` }} />
+                                </div>
+                                <span className="text-zinc-300 w-8 text-right">{volMatch[1]}%</span>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
                 )}
               </div>
-            </div>
-            <p className="text-xs text-zinc-400 mb-1.5 leading-relaxed line-clamp-2">
-              {(signal as any).explanation || signal.reason_summary || "AI-powered trading signal"}
-            </p>
+            )}
           </div>
           <div className="text-right ml-3 relative z-10">
             {currentPrice !== null && (
@@ -931,26 +983,12 @@ export default function NextTradeUI() {
                 )}
               </>
             )}
+            {/* Single confidence indicator - score */}
             {signal.score !== null && signal.score !== undefined && (
-              <div className="mt-1">
-                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${
-                  signal.score >= 80 
-                    ? "bg-emerald-500/15 border border-emerald-500/30" 
-                    : signal.score >= 70 
-                    ? "bg-blue-500/15 border border-blue-500/30" 
-                    : signal.score >= 60
-                    ? "bg-yellow-500/15 border border-yellow-500/30"
-                    : "bg-rose-500/15 border border-rose-500/30"
-                }`}>
-                  <div className={`w-1.5 h-1.5 rounded-full ${
-                    signal.score >= 80 ? "bg-emerald-400" : signal.score >= 70 ? "bg-blue-400" : signal.score >= 60 ? "bg-yellow-400" : "bg-rose-400"
-                  }`} />
-                  <span className={`text-[10px] font-bold ${
-                    signal.score >= 80 ? "text-emerald-300" : signal.score >= 70 ? "text-blue-300" : signal.score >= 60 ? "text-yellow-300" : "text-rose-300"
-                  }`}>
-                    {Math.round(signal.score)}
-                  </span>
-                </div>
+              <div className={`mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                signal.score >= 70 ? "bg-emerald-500/20 text-emerald-400" : signal.score >= 60 ? "bg-yellow-500/20 text-yellow-400" : "bg-rose-500/20 text-rose-400"
+              }`}>
+                {Math.round(signal.score)}
               </div>
             )}
           </div>
@@ -1023,17 +1061,16 @@ export default function NextTradeUI() {
             </span>
           ) : (
             <span className="flex items-center gap-2 justify-center">
-              {direction === "long" ? (
-                <TrendingUp className="w-4 h-4 animate-bounce" />
-              ) : (
-                <TrendingDown className="w-4 h-4 animate-bounce" />
-              )}
-              Add to Journal
-              {direction === "long" ? (
-                <TrendingUp className="w-3 h-3 opacity-60" />
-              ) : (
-                <TrendingDown className="w-3 h-3 opacity-60" />
-              )}
+              <div className={`flex items-center justify-center w-6 h-6 rounded-full ${
+                direction === "long" ? "bg-white/20" : "bg-white/20"
+              }`}>
+                {direction === "long" ? (
+                  <TrendingUp className="w-4 h-4" />
+                ) : (
+                  <TrendingDown className="w-4 h-4" />
+                )}
+              </div>
+              <span>{direction === "long" ? "Go Long" : "Go Short"}</span>
             </span>
           )}
         </Button>

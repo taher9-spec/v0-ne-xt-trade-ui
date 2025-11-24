@@ -56,7 +56,21 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. Initialize Supabase client
-    const supabase = createSupabaseClient()
+   const supabase = createServerClient(cookies); // or whatever helper you use
+
+const { data, error } = await supabase
+  .from('trades')
+  .insert({
+    user_id: user.id,        // must match auth.uid()
+    signal_id,
+    symbol,
+    direction,
+    entry_price,
+    exit_price,
+    timeframe,
+    status: 'open'
+  });
+
 
     // 5. Check user quota (plan limits)
     const quotaCheck = await assertUserWithinSignalQuota(userId)
@@ -175,4 +189,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+
 

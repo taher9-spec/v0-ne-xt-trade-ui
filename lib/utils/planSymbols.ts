@@ -11,14 +11,15 @@ const FREE_SYMBOLS = [
   'XAGUSD', 'XAG', 'XAG/USD', 'SILVER'
 ]
 
-// Starter plan: Adds major forex pairs and more commodities
+// Starter plan: Adds major forex pairs and commodities (but NOT Gold - that's premium)
 const STARTER_ADDITIONS = [
-  'XAUUSD', 'WTI', 'CL', // Gold, Oil
+  'WTI', 'CL', // Oil
   'EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'NZDUSD', // Major forex
 ]
 
-// Pro plan: Adds indices and more symbols
+// Pro plan: Adds Gold (most traded), indices and more symbols
 const PRO_ADDITIONS = [
+  'XAUUSD', 'XAU', 'GOLD', // Gold - most traded symbol, premium feature
   'SPX', 'DJI', 'IXIC', 'VIX', // Indices
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', // Major stocks
   'US30', 'NAS100', 'SPX500', // CFD indices

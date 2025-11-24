@@ -17,7 +17,7 @@ export default function SignalsPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [selectedTimeframe, setSelectedTimeframe] = useState<string | null>(null)
 
-  // Read URL parameters on mount
+  // Read URL parameters on mount and preserve them
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search)
@@ -29,9 +29,30 @@ export default function SignalsPage() {
       }
       if (statusParam === 'active') {
         setFilter('active')
+      } else if (statusParam === 'history') {
+        setFilter('history')
       }
     }
   }, [])
+
+  // Update URL when filters change (but don't clear symbol filter)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      if (filter === 'active') {
+        urlParams.set('status', 'active')
+      } else if (filter === 'history') {
+        urlParams.set('status', 'history')
+      } else {
+        urlParams.delete('status')
+      }
+      // Preserve symbol filter
+      if (selectedSymbol) {
+        urlParams.set('symbol', selectedSymbol)
+      }
+      window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`)
+    }
+  }, [filter, selectedSymbol])
 
   useEffect(() => {
     const fetchSignals = async () => {

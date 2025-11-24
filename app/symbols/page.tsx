@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { TrendingUp, TrendingDown, Coins, DollarSign, BarChart3, Building2, ArrowLeft, Sparkles, Home, BookOpen, Bot, UserIcon } from "lucide-react"
 import Link from "next/link"
+import { getSymbolLogo } from "@/lib/utils/symbolLogos"
+import { isSymbolUnlocked, getRequiredPlanForSymbol } from "@/lib/utils/planSymbols"
+import { Lock, Crown } from "lucide-react"
 import { createSupabaseClient } from "@/lib/supabase/client"
 import type { Signal } from "@/lib/types"
 
@@ -57,6 +60,23 @@ export default function SymbolsPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedAssetClass, setSelectedAssetClass] = useState<string>("all")
+  const [user, setUser] = useState<{ plan_code: string | null } | null>(null)
+
+  // Fetch user plan
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch("/api/me", { cache: "no-store" })
+        if (res.ok) {
+          const json = await res.json()
+          setUser(json.user || null)
+        }
+      } catch (e) {
+        // Silent fail - user might not be logged in
+      }
+    }
+    fetchUser()
+  }, [])
 
   // Fetch symbols
   useEffect(() => {
@@ -189,23 +209,31 @@ export default function SymbolsPage() {
     fetchPricesAndSignals()
   }, [symbols])
 
-  // Filter symbols
-  const filteredSymbols = symbolsWithData.filter((s) => {
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
-      if (
-        !s.display_symbol.toLowerCase().includes(query) &&
-        !s.fmp_symbol.toLowerCase().includes(query) &&
-        !(s.name && s.name.toLowerCase().includes(query))
-      ) {
-        return false
+  // Filter and sort symbols: unlocked first, then locked
+  const filteredSymbols = symbolsWithData
+    .filter((s) => {
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase()
+        if (
+          !s.display_symbol.toLowerCase().includes(query) &&
+          !s.fmp_symbol.toLowerCase().includes(query) &&
+          !(s.name && s.name.toLowerCase().includes(query))
+        ) {
+          return false
+        }
       }
-    }
-    if (selectedAssetClass !== "all") {
-      return s.asset_class === selectedAssetClass
-    }
-    return true
-  })
+      if (selectedAssetClass !== "all") {
+        return s.asset_class === selectedAssetClass
+      }
+      return true
+    })
+    .sort((a, b) => {
+      const planCode = user?.plan_code || null
+      const aUnlocked = isSymbolUnlocked(a.display_symbol || a.fmp_symbol, planCode)
+      const bUnlocked = isSymbolUnlocked(b.display_symbol || b.fmp_symbol, planCode)
+      if (aUnlocked === bUnlocked) return 0
+      return aUnlocked ? -1 : 1
+    })
 
   const assetClasses = Array.from(new Set(symbols.map((s) => s.asset_class)))
 
@@ -315,90 +343,22 @@ export default function SymbolsPage() {
               const Icon = assetClassIcons[symbol.asset_class]
               const colorClass = assetClassColors[symbol.asset_class]
 
+              const planCode = user?.plan_code || null
+              const symbolUnlocked = isSymbolUnlocked(symbol.display_symbol || symbol.fmp_symbol, planCode)
+              const requiredPlan = getRequiredPlanForSymbol(symbol.display_symbol || symbol.fmp_symbol)
+              const logoUrl = getSymbolLogo(symbol.display_symbol || symbol.fmp_symbol, symbol.asset_class)
+
               return (
-                <Card
+                <SymbolCard
                   key={symbol.id}
-                  onClick={() => handleSymbolClick(symbol)}
-                  className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer active:scale-[0.98]"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-lg font-bold">{symbol.display_symbol}</h3>
-                        <Badge variant="outline" className={`h-5 text-[10px] ${colorClass}`}>
-                          <Icon className="w-3 h-3 mr-1" />
-                          {symbol.asset_class}
-                        </Badge>
-                        {symbol.activeSignal && (
-                          <Badge
-                            variant="outline"
-                            className="h-5 text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                          >
-                            <Sparkles className="w-3 h-3 mr-1" />
-                            Signal
-                          </Badge>
-                        )}
-                      </div>
-                      {symbol.name && (
-                        <p className="text-xs text-zinc-400 mb-2">{symbol.name}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Price and Change */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      {symbol.currentPrice !== null ? (
-                        <>
-                          <p className="text-lg font-bold">
-                            ${formatNumber(symbol.currentPrice, symbol.asset_class === "forex" ? 5 : 2)}
-                          </p>
-                          {symbol.priceChange !== null && (
-                            <p
-                              className={`text-sm font-semibold flex items-center gap-1 ${
-                                symbol.priceChange >= 0 ? "text-emerald-400" : "text-rose-400"
-                              }`}
-                            >
-                              {symbol.priceChange >= 0 ? (
-                                <TrendingUp className="w-3 h-3" />
-                              ) : (
-                                <TrendingDown className="w-3 h-3" />
-                              )}
-                              {symbol.priceChange >= 0 ? "+" : ""}
-                              {formatNumber(symbol.priceChange, 2)}%
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <p className="text-sm text-zinc-600">Loading price...</p>
-                      )}
-                    </div>
-
-                    {/* Signal Preview */}
-                    {symbol.activeSignal && (
-                      <div className="text-right">
-                        <p className="text-xs text-zinc-500 mb-1">Active Signal</p>
-                        <div className="flex items-center gap-1">
-                          <Badge
-                            variant="outline"
-                            className={`h-4 text-[9px] ${
-                              symbol.activeSignal.direction === "long"
-                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                                : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                            }`}
-                          >
-                            {symbol.activeSignal.direction.toUpperCase()}
-                          </Badge>
-                          {symbol.activeSignal.timeframe && (
-                            <Badge variant="outline" className="h-4 text-[9px] border-zinc-700 text-zinc-400">
-                              {symbol.activeSignal.timeframe}
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </Card>
+                  symbol={symbol}
+                  Icon={Icon}
+                  colorClass={colorClass}
+                  logoUrl={logoUrl}
+                  symbolUnlocked={symbolUnlocked}
+                  requiredPlan={requiredPlan}
+                  onSymbolClick={handleSymbolClick}
+                />
               )
             })}
           </div>
@@ -406,7 +366,186 @@ export default function SymbolsPage() {
       </div>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-xl border-t border-zinc-800 z-50">
+      <nav className="fixed bottom-0 left-0 right-0 bg-black border-t border-zinc-800 z-50 shadow-2xl">
+        <div className="max-w-md mx-auto px-4 py-3">
+          <div className="flex items-center justify-around">
+            <Link href="/" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
+              <Home className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Home</span>
+            </Link>
+            <div className="flex flex-col items-center gap-1 transition-colors text-emerald-400">
+              <Coins className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Symbols</span>
+            </div>
+            <Link href="/?tab=ai" className="flex flex-col items-center -mt-8">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mb-1 bg-zinc-900 border-2 border-zinc-800">
+                <Sparkles className="w-6 h-6 text-zinc-500" />
+              </div>
+              <span className="text-[10px] font-medium text-zinc-500">AI</span>
+            </Link>
+            <Link href="/?tab=journal" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
+              <BookOpen className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Journal</span>
+            </Link>
+            <Link href="/?tab=account" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
+              <UserIcon className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Account</span>
+            </Link>
+          </div>
+        </div>
+      </nav>
+    </div>
+  )
+}
+
+// Symbol Card Component
+function SymbolCard({ 
+  symbol, 
+  Icon, 
+  colorClass, 
+  logoUrl, 
+  symbolUnlocked, 
+  requiredPlan,
+  onSymbolClick 
+}: { 
+  symbol: SymbolWithPrice
+  Icon: any
+  colorClass: string
+  logoUrl: string
+  symbolUnlocked: boolean
+  requiredPlan: string
+  onSymbolClick: (symbol: SymbolWithPrice) => void
+}) {
+  const [logoError, setLogoError] = useState(false)
+
+  return (
+    <Card
+      onClick={() => onSymbolClick(symbol)}
+      className={`p-4 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer active:scale-[0.98] relative overflow-hidden ${
+        !symbolUnlocked ? "opacity-75" : ""
+      }`}
+    >
+      {/* Lock overlay for locked symbols */}
+      {!symbolUnlocked && (
+        <div className="absolute top-2 right-2 z-10">
+          <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center backdrop-blur-sm">
+            <Lock className="w-4 h-4 text-amber-400" />
+          </div>
+        </div>
+      )}
+      
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1">
+          <div className="flex items-center gap-2.5 mb-1">
+            {/* Symbol logo */}
+            {logoUrl && !logoError ? (
+              <div className="w-10 h-10 rounded-lg bg-zinc-900/50 border border-zinc-800 flex items-center justify-center overflow-hidden p-1">
+                <img 
+                  src={logoUrl} 
+                  alt={symbol.display_symbol}
+                  className="w-full h-full object-contain"
+                  onError={() => setLogoError(true)}
+                />
+              </div>
+            ) : (
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
+                symbol.asset_class === 'crypto'
+                  ? "bg-purple-500/10 border-purple-500/30"
+                  : symbol.asset_class === 'forex'
+                  ? "bg-blue-500/10 border-blue-500/30"
+                  : symbol.asset_class === 'commodity'
+                  ? "bg-yellow-500/10 border-yellow-500/30"
+                  : "bg-zinc-800/50 border-zinc-700"
+              }`}>
+                <span className="text-xs font-bold text-zinc-300">
+                  {symbol.display_symbol.substring(0, 2)}
+                </span>
+              </div>
+            )}
+            <div>
+              <h3 className="text-lg font-bold">{symbol.display_symbol}</h3>
+              {!symbolUnlocked && (
+                <p className="text-[10px] text-amber-400">
+                  {requiredPlan === 'starter' ? 'Starter' : requiredPlan === 'pro' ? 'Pro' : 'Elite'} plan
+                </p>
+              )}
+            </div>
+            <Badge variant="outline" className={`h-5 text-[10px] ${colorClass}`}>
+              <Icon className="w-3 h-3 mr-1" />
+              {symbol.asset_class}
+            </Badge>
+            {symbol.activeSignal && (
+              <Badge
+                variant="outline"
+                className="h-5 text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+              >
+                <Sparkles className="w-3 h-3 mr-1" />
+                Signal
+              </Badge>
+            )}
+          </div>
+          {symbol.name && (
+            <p className="text-xs text-zinc-400 mb-2">{symbol.name}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Price and Change */}
+      <div className="flex items-center justify-between">
+        <div>
+          {symbol.currentPrice !== null ? (
+            <>
+              <p className="text-lg font-bold">
+                ${formatNumber(symbol.currentPrice, symbol.asset_class === "forex" ? 5 : 2)}
+              </p>
+              {symbol.priceChange !== null && (
+                <p
+                  className={`text-sm font-semibold flex items-center gap-1 ${
+                    symbol.priceChange >= 0 ? "text-emerald-400" : "text-rose-400"
+                  }`}
+                >
+                  {symbol.priceChange >= 0 ? (
+                    <TrendingUp className="w-3 h-3" />
+                  ) : (
+                    <TrendingDown className="w-3 h-3" />
+                  )}
+                  {symbol.priceChange >= 0 ? "+" : ""}
+                  {formatNumber(symbol.priceChange, 2)}%
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-zinc-600">Loading price...</p>
+          )}
+        </div>
+
+        {/* Signal Preview */}
+        {symbol.activeSignal && (
+          <div className="text-right">
+            <p className="text-xs text-zinc-500 mb-1">Active Signal</p>
+            <div className="flex items-center gap-1">
+              <Badge
+                variant="outline"
+                className={`h-4 text-[9px] ${
+                  symbol.activeSignal.direction === "long"
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                    : "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                }`}
+              >
+                {symbol.activeSignal.direction.toUpperCase()}
+              </Badge>
+              {symbol.activeSignal.timeframe && (
+                <Badge variant="outline" className="h-4 text-[9px] border-zinc-700 text-zinc-400">
+                  {symbol.activeSignal.timeframe}
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
         <div className="max-w-md mx-auto px-4 py-3">
           <div className="flex items-center justify-around">
             <Link href="/" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">

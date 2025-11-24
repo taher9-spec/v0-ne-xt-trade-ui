@@ -459,11 +459,22 @@ export default function NextTradeUI() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {signals.map((signal) => (
-              <div key={signal.id} id={`signal-${signal.id}`}>
-                <SignalCard signal={signal} />
-              </div>
-            ))}
+            {(() => {
+              // Sort signals: unlocked first, then locked
+              const planCode = user?.plan_code || null
+              const sortedSignals = [...signals].sort((a, b) => {
+                const aUnlocked = isSymbolUnlocked(a.symbol, planCode)
+                const bUnlocked = isSymbolUnlocked(b.symbol, planCode)
+                if (aUnlocked === bUnlocked) return 0
+                return aUnlocked ? -1 : 1
+              })
+              
+              return sortedSignals.map((signal) => (
+                <div key={signal.id} id={`signal-${signal.id}`}>
+                  <SignalCard signal={signal} />
+                </div>
+              ))
+            })()}
           </div>
         )}
       </section>
@@ -643,25 +654,31 @@ export default function NextTradeUI() {
         // Success - trade created
         if (data.trade) {
           setTaken(true)
-          console.log("[v0] Signal marked as taken:", signal.symbol)
+          console.log("[v0] Trade created successfully:", data.trade.id)
           
-          // Refresh trades list to update Journal immediately
-          try {
-            const tradesRes = await fetch("/api/trades/list", { 
-              cache: "no-store",
-              headers: {
-                "Cache-Control": "no-cache",
+          // Force refresh trades list to update Journal immediately
+          // Use a small delay to ensure database write is complete
+          setTimeout(async () => {
+            try {
+              const tradesRes = await fetch("/api/trades/list", { 
+                cache: "no-store",
+                headers: {
+                  "Cache-Control": "no-cache",
+                  "Pragma": "no-cache",
+                }
+              })
+              if (tradesRes.ok) {
+                const tradesData = await tradesRes.json()
+                console.log("[v0] Refreshed trades after creation:", tradesData.trades?.length || 0, "trades")
+                setTrades(tradesData.trades ?? [])
+                setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
+              } else {
+                console.error("[v0] Failed to refresh trades:", tradesRes.status)
               }
-            })
-            if (tradesRes.ok) {
-              const tradesData = await tradesRes.json()
-              setTrades(tradesData.trades ?? [])
-              setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
+            } catch (refreshError) {
+              console.error("[v0] Failed to refresh trades:", refreshError)
             }
-          } catch (refreshError) {
-            console.error("[v0] Failed to refresh trades:", refreshError)
-            // Non-critical - trade was created successfully
-          }
+          }, 500)
         }
       } catch (e: any) {
         // Log error but show clean message to user
@@ -750,22 +767,6 @@ export default function NextTradeUI() {
                     <p className="text-[10px] text-zinc-500">{signal.symbols.name}</p>
                   )}
                 </div>
-              </div>
-              
-              {/* Beautiful LONG/SHORT badge with gradient and shadow */}
-              <div
-                className={`h-7 px-3 rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-xl transition-all ${
-                  direction === "long"
-                    ? "bg-gradient-to-r from-emerald-500 via-emerald-500 to-emerald-600 text-white shadow-emerald-500/40 hover:shadow-emerald-500/60"
-                    : "bg-gradient-to-r from-rose-500 via-rose-500 to-rose-600 text-white shadow-rose-500/40 hover:shadow-rose-500/60"
-                }`}
-              >
-                {direction === "long" ? (
-                  <TrendingUp className="w-3.5 h-3.5" />
-                ) : (
-                  <TrendingDown className="w-3.5 h-3.5" />
-                )}
-                {direction.toUpperCase()}
               </div>
               
               {signal.timeframe && (
@@ -1501,30 +1502,135 @@ export default function NextTradeUI() {
                     plan.code === "elite" ? "border-amber-500/30" : ""
                   } ${user.plan_code === plan.code ? "border-emerald-500/30 bg-emerald-500/5" : ""}`}
                 >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-base font-bold">{plan.name}</h3>
-                        {plan.code === "elite" && <Crown className="w-4 h-4 text-amber-500" />}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-lg font-bold">{plan.name}</h3>
+                        {plan.code === "elite" && <Crown className="w-5 h-5 text-amber-500" />}
                       </div>
-                      <p className="text-xs text-zinc-500">{plan.description}</p>
+                      <p className="text-sm text-zinc-400 mb-3 leading-relaxed">{plan.description}</p>
+                      
+                      {/* Plan Benefits */}
+                      <div className="space-y-2 mb-3">
+                        {plan.code === "free" && (
+                          <>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>BTC, ETH, Silver signals</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>2 signals per day to journal</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>3 AI questions per day</span>
+                            </div>
+                          </>
+                        )}
+                        {plan.code === "starter" && (
+                          <>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>All major forex pairs + Oil</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>8 signals per day to journal</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>20 AI questions per day</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>Full trade journal access</span>
+                            </div>
+                          </>
+                        )}
+                        {plan.code === "pro" && (
+                          <>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span><strong className="text-amber-400">Gold (XAUUSD)</strong> - Most traded symbol</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>Indices (SPX, DJI, NASDAQ) + Major stocks</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>12 signals per day to journal</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>Unlimited AI questions</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50" />
+                              <span>Advanced performance stats</span>
+                            </div>
+                          </>
+                        )}
+                        {plan.code === "elite" && (
+                          <>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span><strong className="text-amber-400">ALL symbols</strong> - Complete access</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span><strong className="text-amber-400">Unlimited</strong> signals to journal</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span>Unlimited AI questions</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span>Weekly AI trade review</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-zinc-500">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              <span>Priority support</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xl font-bold">
-                      ${plan.price_usd}
-                      <span className="text-xs text-zinc-500 font-normal">/mo</span>
-                    </p>
+                    <div className="ml-4 text-right">
+                      <p className="text-2xl font-bold">
+                        ${plan.price_usd}
+                        <span className="text-xs text-zinc-500 font-normal">/mo</span>
+                      </p>
+                      {plan.code !== "free" && (
+                        <p className="text-[10px] text-zinc-500 mt-1">Billed monthly</p>
+                      )}
+                    </div>
                   </div>
                   <Button
-                    className={`w-full h-9 mt-3 ${
+                    className={`w-full h-10 text-sm font-bold mt-3 ${
                       user.plan_code === plan.code
                         ? "bg-emerald-500/20 text-emerald-400 cursor-default border border-emerald-500/30"
                         : plan.code === "elite"
-                          ? "bg-gradient-to-r from-amber-500 to-orange-500 text-black hover:from-amber-600 hover:to-orange-600"
-                          : "bg-zinc-800 hover:bg-zinc-700 text-white"
+                          ? "bg-gradient-to-r from-amber-500 to-orange-500 text-black hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/30"
+                          : plan.code === "pro"
+                          ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white hover:from-blue-600 hover:to-indigo-600 shadow-lg shadow-blue-500/30"
+                          : "bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/30"
                     }`}
                     disabled={user.plan_code === plan.code}
                   >
-                    {user.plan_code === plan.code ? "Current Plan" : "Upgrade"}
+                    {user.plan_code === plan.code ? (
+                      <span className="flex items-center gap-2">
+                        <Check className="w-4 h-4" />
+                        Current Plan
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2 justify-center">
+                        {plan.code === "elite" && <Crown className="w-4 h-4" />}
+                        Upgrade to {plan.name}
+                      </span>
+                    )}
                   </Button>
                 </Card>
               ))}
@@ -1553,7 +1659,7 @@ export default function NextTradeUI() {
           </motion.div>
         </AnimatePresence>
 
-        <nav className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-xl border-t border-zinc-800">
+        <nav className="fixed bottom-0 left-0 right-0 bg-black border-t border-zinc-800 z-50 shadow-2xl">
           <div className="max-w-md mx-auto px-4 py-3">
             <div className="flex items-center justify-around">
               <button

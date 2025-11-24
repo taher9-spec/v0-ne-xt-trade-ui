@@ -9,13 +9,9 @@ import { getAllSignals } from "@/lib/supabase/signals"
  */
 export async function GET(req: NextRequest) {
   try {
-    // Require authenticated user
+    // Allow both authenticated and unauthenticated users (for free plan visibility)
     const cookieStore = await cookies()
     const userId = cookieStore.get("tg_user_id")?.value
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
 
     const searchParams = req.nextUrl.searchParams
     const limit = parseInt(searchParams.get("limit") || "100", 10)

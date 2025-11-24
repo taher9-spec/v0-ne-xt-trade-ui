@@ -1,10 +1,11 @@
-import { createSupabaseClient } from "./client"
+import { supabaseServer } from "../supabaseServer"
 import type { Trade } from "@/lib/types"
 import { getLatestPriceForSymbols } from "@/lib/marketPrices"
 
 /**
  * Get trades for a user with computed PnL
  * Computes pnl, pnl_percent, and result_r server-side using latest prices
+ * Uses server-side Supabase client for proper RLS bypass
  */
 export async function getUserTrades(userId: string, limit: number = 50): Promise<{
   trades: Trade[]
@@ -17,7 +18,7 @@ export async function getUserTrades(userId: string, limit: number = 50): Promise
   }
 }> {
   try {
-    const supabase = createSupabaseClient()
+    const supabase = supabaseServer()
 
     // Fetch trades for user with signal join
     // Select specific fields from trades and signals as requested

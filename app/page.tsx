@@ -902,24 +902,22 @@ export default function NextTradeUI() {
                 </Badge>
               )}
 
-              {signal.status && signal.status === "active" && (
-                <div className="relative">
-                  <div className="absolute inset-0 bg-emerald-500/20 rounded-lg blur-sm animate-pulse" />
-                  <Badge className="h-7 px-3 text-[10px] bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/40 text-emerald-300 backdrop-blur-sm relative z-10">
-                    <div className="w-2 h-2 bg-emerald-400 rounded-full mr-1.5 animate-pulse shadow-lg shadow-emerald-400/50" />
-                    LIVE
-                  </Badge>
-                </div>
-              )}
+              {/* Direction arrow - prominent visual indicator */}
+              <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                direction === "long"
+                  ? "bg-emerald-500/20 border border-emerald-500/40"
+                  : "bg-rose-500/20 border border-rose-500/40"
+              }`}>
+                {direction === "long" ? (
+                  <TrendingUp className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <TrendingDown className="w-5 h-5 text-rose-400" />
+                )}
+              </div>
             </div>
-            <p className="text-xs text-zinc-400 mb-1.5 leading-relaxed">
+            <p className="text-xs text-zinc-400 mb-1.5 leading-relaxed line-clamp-2">
               {(signal as any).explanation || signal.reason_summary || "AI-powered trading signal"}
             </p>
-            {timestamp && (
-              <p className="text-[10px] text-zinc-600">
-                Published {formatRelativeTime(timestamp)}
-              </p>
-            )}
           </div>
           <div className="text-right ml-3 relative z-10">
             {currentPrice !== null && (
@@ -935,18 +933,24 @@ export default function NextTradeUI() {
             )}
             {signal.score !== null && signal.score !== undefined && (
               <div className="mt-1">
-                <p className="text-[10px] text-zinc-500 mb-0.5">Score</p>
-                <p className={`text-xs font-bold ${
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${
                   signal.score >= 80 
-                    ? "text-emerald-400" 
+                    ? "bg-emerald-500/15 border border-emerald-500/30" 
                     : signal.score >= 70 
-                    ? "text-blue-400" 
+                    ? "bg-blue-500/15 border border-blue-500/30" 
                     : signal.score >= 60
-                    ? "text-yellow-400"
-                    : "text-rose-400"
+                    ? "bg-yellow-500/15 border border-yellow-500/30"
+                    : "bg-rose-500/15 border border-rose-500/30"
                 }`}>
-                  {Math.round(signal.score)}
-                </p>
+                  <div className={`w-1.5 h-1.5 rounded-full ${
+                    signal.score >= 80 ? "bg-emerald-400" : signal.score >= 70 ? "bg-blue-400" : signal.score >= 60 ? "bg-yellow-400" : "bg-rose-400"
+                  }`} />
+                  <span className={`text-[10px] font-bold ${
+                    signal.score >= 80 ? "text-emerald-300" : signal.score >= 70 ? "text-blue-300" : signal.score >= 60 ? "text-yellow-300" : "text-rose-300"
+                  }`}>
+                    {Math.round(signal.score)}
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -977,6 +981,14 @@ export default function NextTradeUI() {
             )}
           </div>
         </div>
+
+        {/* Timestamp at bottom corner */}
+        {timestamp && (
+          <div className="flex items-center gap-1 text-[10px] text-zinc-600 mb-3 relative z-10">
+            <Clock className="w-3 h-3" />
+            <span>{formatRelativeTime(timestamp)}</span>
+          </div>
+        )}
 
         <Button
           className={`w-full h-11 text-sm font-bold relative z-10 transition-all duration-300 shadow-lg ${
@@ -1553,13 +1565,11 @@ export default function NextTradeUI() {
                 if (res.ok) {
                   window.location.reload()
                 } else {
-                  // Fallback: clear cookie client-side
                   document.cookie = "tg_user_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
                   window.location.reload()
                 }
               } catch (error) {
                 console.error("[v0] Logout error:", error)
-                // Fallback: clear cookie client-side
                 document.cookie = "tg_user_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
                 window.location.reload()
               }
@@ -1570,6 +1580,26 @@ export default function NextTradeUI() {
             <LogOut className="w-4 h-4" />
           </button>
         </header>
+
+        {/* Welcome/Disclaimer Card */}
+        <Card className="p-4 bg-gradient-to-br from-emerald-950/40 via-zinc-950 to-teal-950/40 border-emerald-500/20">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center flex-shrink-0">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-bold text-emerald-300 mb-1">Hey, Trader! 👋</h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                This app is made by traders, for traders. We provide deep analysis and quality signals, 
+                but you're grown - you know this isn't financial advice. 
+                <span className="text-emerald-400"> No one can snipe every top and bottom.</span>
+              </p>
+              <p className="text-[10px] text-zinc-500 mt-2">
+                Trade smart. Manage risk. Stay in the game. 💪
+              </p>
+            </div>
+          </div>
+        </Card>
 
         <Card className="p-4 bg-zinc-950 border-zinc-800">
           <div className="flex items-center gap-3 mb-4">
@@ -1865,8 +1895,34 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const [showNotes, setShowNotes] = useState(false)
   const [notes, setNotes] = useState(trade.notes || "")
   const [savingNotes, setSavingNotes] = useState(false)
+  const [aiInsight, setAiInsight] = useState<string | null>(null)
+  const [loadingInsight, setLoadingInsight] = useState(false)
   const lastAdviceRef = useRef<string | null>(null)
   const router = useRouter()
+  
+  // Fetch AI insight for this trade
+  const fetchAiInsight = async () => {
+    if (loadingInsight) return
+    setLoadingInsight(true)
+    setAiInsight(null)
+    try {
+      const res = await fetch("/api/ai/trade-insight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tradeId: trade.id }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiInsight(data.insight)
+      } else {
+        setAiInsight("Couldn't get insight right now. Try again!")
+      }
+    } catch (e) {
+      setAiInsight("Oops! Something went wrong. Try again.")
+    } finally {
+      setLoadingInsight(false)
+    }
+  }
   
   // Extract signal data - ONLY use real data from database, NO defaults
   const signal = trade.signals || {}
@@ -2007,14 +2063,14 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   })()
 
   return (
-    <Card className={`p-4 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
+    <Card className={`p-3 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
       direction === "long"
         ? "bg-gradient-to-br from-emerald-950/60 via-zinc-950 to-emerald-950/40"
         : "bg-gradient-to-br from-rose-950/60 via-zinc-950 to-rose-950/40"
     }`}>
       <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${timeframeStyle.strip} opacity-80`} />
-      {/* Side indicator - Sentiment/Volume (NOT direction) */}
-      <div className="absolute top-0 right-0 w-2.5 h-full z-0">
+      {/* Side indicator - Sentiment/Volume */}
+      <div className="absolute top-0 right-0 w-1.5 h-full z-0">
         <div 
           className={`w-full h-full bg-gradient-to-b ${
             sentimentColor === 'rose' 
@@ -2027,21 +2083,14 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
         />
       </div>
       
-      {/* Subtle direction overlay - makes direction even clearer */}
-      <div className={`absolute inset-0 opacity-5 group-hover:opacity-8 transition-opacity ${
-        direction === "long"
-          ? "bg-gradient-to-br from-emerald-500/30 via-emerald-400/15 to-transparent"
-          : "bg-gradient-to-br from-rose-500/30 via-rose-400/15 to-transparent"
-      }`} />
-      
-      {/* Header: Logo, Symbol Name, Category, Timestamp */}
-        <div className="flex items-start justify-between mb-4 relative z-10">
-        <div className="flex items-center gap-3 flex-1">
-          {/* Symbol logo */}
+      {/* Header: Logo, Symbol Name, Direction Arrow */}
+      <div className="flex items-center justify-between mb-3 relative z-10">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {/* Symbol logo - smaller */}
           {(() => {
             const logoUrl = getSymbolLogo(logoSymbol || trade.symbol, assetClass)
             return logoUrl ? (
-              <div className="w-12 h-12 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center overflow-hidden p-1.5 flex-shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center overflow-hidden p-1 flex-shrink-0">
                 <img 
                   src={logoUrl} 
                   alt={primarySymbol}
@@ -2052,44 +2101,44 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
                 />
               </div>
             ) : (
-              <div className="w-12 h-12 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center flex-shrink-0">
-                <span className="text-lg font-bold text-zinc-400">{primarySymbol.substring(0, 2)}</span>
+              <div className="w-9 h-9 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center flex-shrink-0">
+                <span className="text-sm font-bold text-zinc-400">{primarySymbol.substring(0, 2)}</span>
               </div>
             )
           })()}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-lg font-bold truncate">{primarySymbol}</h3>
-              {/* Category badge */}
-              <div className="h-5 px-2 rounded text-[10px] bg-zinc-800/70 text-zinc-300 border border-zinc-700/50 flex-shrink-0">
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-base font-bold truncate">{primarySymbol}</h3>
+              <div className="h-4 px-1.5 rounded text-[9px] bg-zinc-800/70 text-zinc-400 border border-zinc-700/50 flex-shrink-0">
                 {categoryLabels[category] || category}
               </div>
             </div>
-            {/* Timestamp */}
-            <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-              <Clock className="w-3 h-3" />
+            <div className="flex items-center gap-1 text-[10px] text-zinc-500">
+              <Clock className="w-2.5 h-2.5" />
               <span>{formatDate(trade.opened_at)}</span>
             </div>
           </div>
         </div>
-        {/* Direction arrow indicator */}
-        <div className={`flex-shrink-0 ${direction === "long" ? "text-emerald-400" : "text-rose-400"}`}>
+        {/* Direction arrow */}
+        <div className={`flex items-center justify-center w-8 h-8 rounded-full flex-shrink-0 ${
+          direction === "long" ? "bg-emerald-500/20 border border-emerald-500/40" : "bg-rose-500/20 border border-rose-500/40"
+        }`}>
           {direction === "long" ? (
-            <UpIcon className="w-6 h-6" />
+            <UpIcon className="w-5 h-5 text-emerald-400" />
           ) : (
-            <DownIcon className="w-6 h-6" />
+            <DownIcon className="w-5 h-5 text-rose-400" />
           )}
         </div>
       </div>
       
-      {/* Status and Timeframe */}
-      <div className="flex items-center gap-2 mb-4 relative z-10">
+      {/* Status and Timeframe - compact */}
+      <div className="flex items-center gap-1.5 mb-3 relative z-10 flex-wrap">
         {timeframeLabel && (
-          <div className={`h-5 px-2 rounded text-[10px] font-semibold border ${timeframeStyle.badge}`}>
+          <div className={`h-5 px-2 rounded text-[9px] font-semibold border ${timeframeStyle.badge}`}>
             {timeframeLabel}
           </div>
         )}
-        <div className={`h-5 px-2 rounded text-[10px] font-medium ${
+        <div className={`h-5 px-2 rounded text-[9px] font-medium ${
           trade.status === "open"
             ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
             : isTpHit
@@ -2100,344 +2149,236 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
         }`}>
           {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
         </div>
-        {/* SL Hit Info */}
-        {isSlHit && closedAt && closePrice && (
-          <div className="flex items-center gap-1.5 text-xs text-rose-400 ml-auto">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            <span>Hit at {new Date(closedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
-            <DollarSign className="w-3 h-3" />
-            <span>{formatNumber(closePrice, assetClass === 'forex' ? 5 : 2)}</span>
-          </div>
+        {isSlHit && closedAt && (
+          <span className="text-[9px] text-rose-400 ml-auto">SL @ {formatNumber(closePrice, 2)}</span>
         )}
       </div>
 
-      {(signalScore !== null || signalTier || signalRegime) && (
-        <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] text-zinc-400">
+      {/* Compact signal info row */}
+      {(signalScore !== null || signalTier || signalRegime || openDuration || timeInTrade) && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[9px] text-zinc-400">
           {signalScore !== null && (
-            <span className={`px-2 py-0.5 rounded-full border ${signalScore >= 70 ? "border-emerald-500/40 text-emerald-200" : "border-zinc-700 text-zinc-300"}`}>
-              Score {Math.round(signalScore)}
+            <span className={`px-1.5 py-0.5 rounded border ${signalScore >= 70 ? "border-emerald-500/40 text-emerald-300" : "border-zinc-700 text-zinc-400"}`}>
+              {Math.round(signalScore)}
             </span>
           )}
           {signalTier && (
-            <span className="px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-200">
-              Tier {signalTier}
+            <span className="px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-300">
+              {signalTier}
             </span>
           )}
           {signalRegime && (
-            <span className="px-2 py-0.5 rounded-full border border-blue-500/30 text-blue-200 uppercase tracking-wider">
+            <span className="px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-300 uppercase">
               {signalRegime}
             </span>
           )}
-        </div>
-      )}
-
-      {signalExplanation && (
-        <p className="text-xs text-zinc-400 mb-4">{signalExplanation}</p>
-      )}
-
-      {trade.status === "open" && openDuration && (
-        <p className="text-[10px] text-zinc-500 mb-3">Open for {openDuration}</p>
-      )}
-      {trade.status !== "open" && timeInTrade && (
-        <p className="text-[10px] text-zinc-500 mb-3">Time in trade: {timeInTrade}</p>
-      )}
-
-      {/* Middle section: Entry/Stop Loss/Target on left, R/% on right */}
-      <div className="grid grid-cols-2 gap-3 mb-3 relative z-10">
-        {/* Left block: Entry, Stop Loss, Target */}
-        <div className="space-y-2">
-          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-2.5 rounded-lg">
-            <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
-            <p className="text-base font-bold">{formatNumber(entryPrice, priceDecimals, "N/A")}</p>
-          </div>
-          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-2.5 rounded-lg">
-            <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
-            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, priceDecimals, "N/A")}</p>
-          </div>
-          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-2.5 rounded-lg">
-            <p className="text-[10px] text-zinc-500 mb-1">{tpLevels.length > 1 ? "Targets" : "Target"}</p>
-            {tpLevels.length > 0 ? (
-              <div className="space-y-1 text-xs">
-                {tpLevels.map((level) => (
-                  <div key={level.label} className="flex items-center justify-between">
-                    <span className="text-zinc-400">{level.label}</span>
-                    <span className="font-semibold text-emerald-400">{formatNumber(level.value, priceDecimals)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, priceDecimals, "N/A")}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Right block: Current R and Current %} */}
-        <div className={`flex flex-col justify-center items-end ${currentR >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-          <div className="mb-3 text-center">
-            <p className="text-[10px] text-zinc-500 mb-1">Current R</p>
-            <p className="text-3xl font-bold">
-              {currentR > 0 ? "+" : ""}
-              {formatNumber(currentR, 2, "0.00")}R
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-[10px] text-zinc-500 mb-1">Current %</p>
-            <p className="text-2xl font-semibold">
-              {currentPercent > 0 ? "+" : ""}
-              {formatNumber(currentPercent, 2, "0.00")}%
-            </p>
-          </div>
-          {trade.status === "open" && trade.current_price && (
-            <>
-              <p className="text-[10px] text-zinc-500 mt-2">
-                Live Price
-              </p>
-              <p className="text-xl font-semibold text-white">
-                ${formatNumber(trade.current_price, priceDecimals)}
-              </p>
-              {lastPriceRefresh && (
-                <p className="text-[10px] text-zinc-600 mt-0.5">
-                  Updated {lastPriceRefresh}
-                </p>
-              )}
-            </>
+          {trade.status === "open" && openDuration && (
+            <span className="text-zinc-500 ml-auto">Open {openDuration}</span>
           )}
+          {trade.status !== "open" && timeInTrade && (
+            <span className="text-zinc-500 ml-auto">{timeInTrade}</span>
+          )}
+        </div>
+      )}
+
+      {/* Compact grid: Entry/SL/TP + R/% */}
+      <div className="grid grid-cols-5 gap-2 mb-2 relative z-10">
+        {/* Entry */}
+        <div className="bg-zinc-900/80 border border-zinc-800/50 p-2 rounded-lg col-span-1">
+          <p className="text-[9px] text-zinc-500 mb-0.5">Entry</p>
+          <p className="text-xs font-bold">{formatNumber(entryPrice, priceDecimals, "—")}</p>
+        </div>
+        {/* SL */}
+        <div className="bg-zinc-900/80 border border-zinc-800/50 p-2 rounded-lg col-span-1">
+          <p className="text-[9px] text-zinc-500 mb-0.5">SL</p>
+          <p className="text-xs font-bold text-rose-400">{formatNumber(stopLoss, priceDecimals, "—")}</p>
+        </div>
+        {/* Targets */}
+        <div className="bg-zinc-900/80 border border-zinc-800/50 p-2 rounded-lg col-span-1">
+          <p className="text-[9px] text-zinc-500 mb-0.5">TP</p>
+          {tpLevels.length > 0 ? (
+            <div className="space-y-0.5">
+              {tpLevels.slice(0, 2).map((level) => (
+                <p key={level.label} className="text-[10px] font-semibold text-emerald-400">{formatNumber(level.value, priceDecimals)}</p>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs font-bold text-emerald-400">—</p>
+          )}
+        </div>
+        {/* R value */}
+        <div className={`bg-zinc-900/80 border border-zinc-800/50 p-2 rounded-lg col-span-1 text-center ${currentR >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+          <p className="text-[9px] text-zinc-500 mb-0.5">R</p>
+          <p className="text-sm font-bold">{currentR > 0 ? "+" : ""}{formatNumber(currentR, 2, "0")}R</p>
+        </div>
+        {/* % value */}
+        <div className={`bg-zinc-900/80 border border-zinc-800/50 p-2 rounded-lg col-span-1 text-center ${currentPercent >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+          <p className="text-[9px] text-zinc-500 mb-0.5">%</p>
+          <p className="text-sm font-bold">{currentPercent > 0 ? "+" : ""}{formatNumber(currentPercent, 2, "0")}%</p>
         </div>
       </div>
 
-      {/* TP Progress for open trades ONLY - Show ALL targets */}
+      {/* Live price row for open trades */}
+      {trade.status === "open" && trade.current_price && (
+        <div className="flex items-center justify-between mb-2 px-1 relative z-10">
+          <span className="text-[9px] text-zinc-500">Live</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-white">${formatNumber(trade.current_price, priceDecimals)}</span>
+            {lastPriceRefresh && (
+              <span className="text-[9px] text-zinc-600">{lastPriceRefresh}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+
+      {/* TP Progress - compact */}
       {trade.status === "open" && tpProgress && currentPrice > 0 && (
-        <div className="mb-3 space-y-2 relative z-10">
+        <div className="mb-2 space-y-1.5 relative z-10">
           {trade.tp1 && (
-            <div>
-              <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-                <span>TP1: {formatNumber(trade.tp1, assetClass === 'forex' ? 5 : 2)}</span>
-                <span>{tpProgress.tp1Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp1Pips.toFixed(1)} pips` : `${tpProgress.tp1Pips.toFixed(2)} pts`}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-zinc-500 w-8">TP1</span>
+              <div className="flex-1 h-1 bg-zinc-900 rounded-full overflow-hidden">
+                <div className={`h-full ${tpProgress.tp1Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/50"}`} style={{ width: `${Math.min(100, tpProgress.tp1Progress)}%` }} />
               </div>
-              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-300 ${
-                    tpProgress.tp1Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/50"
-                  }`}
-                  style={{ width: `${Math.min(100, tpProgress.tp1Progress)}%` }}
-                />
-              </div>
+              <span className="text-[9px] text-zinc-400 w-10 text-right">{tpProgress.tp1Progress.toFixed(0)}%</span>
             </div>
           )}
           {trade.tp2 && (
-            <div>
-              <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-                <span>TP2: {formatNumber(trade.tp2, assetClass === 'forex' ? 5 : 2)}</span>
-                <span>{tpProgress.tp2Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp2Pips.toFixed(1)} pips` : `${tpProgress.tp2Pips.toFixed(2)} pts`}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-zinc-500 w-8">TP2</span>
+              <div className="flex-1 h-1 bg-zinc-900 rounded-full overflow-hidden">
+                <div className={`h-full ${tpProgress.tp2Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/30"}`} style={{ width: `${Math.min(100, tpProgress.tp2Progress)}%` }} />
               </div>
-              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-300 ${
-                    tpProgress.tp2Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/30"
-                  }`}
-                  style={{ width: `${Math.min(100, tpProgress.tp2Progress)}%` }}
-                />
-              </div>
+              <span className="text-[9px] text-zinc-400 w-10 text-right">{tpProgress.tp2Progress.toFixed(0)}%</span>
             </div>
           )}
           {trade.tp3 && (
-            <div>
-              <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-                <span>TP3: {formatNumber(trade.tp3, assetClass === 'forex' ? 5 : 2)}</span>
-                <span>{tpProgress.tp3Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp3Pips.toFixed(1)} pips` : `${tpProgress.tp3Pips.toFixed(2)} pts`}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] text-zinc-500 w-8">TP3</span>
+              <div className="flex-1 h-1 bg-zinc-900 rounded-full overflow-hidden">
+                <div className={`h-full ${tpProgress.tp3Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/20"}`} style={{ width: `${Math.min(100, tpProgress.tp3Progress)}%` }} />
               </div>
-              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full transition-all duration-300 ${
-                    tpProgress.tp3Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/20"
-                  }`}
-                  style={{ width: `${Math.min(100, tpProgress.tp3Progress)}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {nextTargetLabel && (
-            <div className="flex items-center gap-2 text-[10px] text-emerald-300 mt-2">
-              <Target className="w-3 h-3" />
-              <span>Next target: {nextTargetLabel}</span>
+              <span className="text-[9px] text-zinc-400 w-10 text-right">{tpProgress.tp3Progress.toFixed(0)}%</span>
             </div>
           )}
         </div>
       )}
       
-      {/* TP Hit Display - Show when TP was actually hit with timestamp and price */}
+      {/* TP Hit - compact */}
       {isTpHit && closedAt && closePrice && (
-        <div className="mb-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/40 relative z-10">
-            <div className="flex items-start gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-xs font-semibold text-emerald-300 mb-1">
-                {trade.tp_hit_level ? `${trade.tp_hit_level.toUpperCase()} Hit!` : "Target Hit"}
-              </p>
-              <div className="text-[10px] text-emerald-400/80 space-y-0.5">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3 h-3" />
-                  <span>Hit at {new Date(closedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <DollarSign className="w-3 h-3" />
-                  <span>Price: {formatNumber(closePrice, assetClass === 'forex' ? 5 : 2)}</span>
-                </div>
-                {trade.tp2 && (
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <Target className="w-3 h-3" />
-                    <span>Next: TP2 at {formatNumber(trade.tp2, assetClass === 'forex' ? 5 : 2)}</span>
-                  </div>
-                )}
-                {!trade.tp2 && trade.tp3 && (
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <Target className="w-3 h-3" />
-                    <span>Next: TP3 at {formatNumber(trade.tp3, assetClass === 'forex' ? 5 : 2)}</span>
-                  </div>
-                )}
-              </div>
+        <div className="mb-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/40 relative z-10">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <div className="flex-1 flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-emerald-300">
+                {trade.tp_hit_level ? `${trade.tp_hit_level.toUpperCase()} Hit!` : "TP Hit"}
+              </span>
+              <span className="text-[9px] text-emerald-400/80">@ {formatNumber(closePrice, 2)}</span>
             </div>
           </div>
         </div>
       )}
       
-      {/* Advice messages with proper icons */}
-      {tradeAdvice && (
-        <div className={`mb-3 p-3 rounded-lg border relative z-10 backdrop-blur-sm ${
-          tradeAdvice.type === 'success'
-            ? 'bg-emerald-500/10 border-emerald-500/40'
-            : tradeAdvice.type === 'warning'
-            ? 'bg-yellow-500/10 border-yellow-500/40'
-            : 'bg-blue-500/10 border-blue-500/40'
-        }`}>
-          <div className={`flex items-start gap-2.5 ${
-            tradeAdvice.type === 'success'
-              ? 'text-emerald-300'
-              : tradeAdvice.type === 'warning'
-              ? 'text-yellow-300'
-              : 'text-blue-300'
-          }`}>
-            {tradeAdvice.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            ) : tradeAdvice.type === 'warning' ? (
-              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+      {/* AI Insight Button + Display */}
+      <div className="mb-2 relative z-10">
+        {aiInsight ? (
+          <div className="px-2 py-2 rounded-lg bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30">
+            <div className="flex items-start gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] text-purple-200 flex-1">{aiInsight}</p>
+              <button onClick={() => setAiInsight(null)} className="text-zinc-500 hover:text-zinc-300">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={fetchAiInsight}
+            disabled={loadingInsight}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 text-purple-300 hover:from-purple-500/20 hover:to-pink-500/20 transition-all text-[10px]"
+          >
+            {loadingInsight ? (
+              <>
+                <div className="w-3 h-3 border border-purple-400 border-t-transparent rounded-full animate-spin" />
+                <span>Thinking...</span>
+              </>
             ) : (
-              <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <>
+                <Sparkles className="w-3 h-3" />
+                <span>AI Insight</span>
+              </>
             )}
-            <p className="text-xs leading-relaxed">{tradeAdvice.message.replace(/[🎯💡📈⚠️]/g, '').trim()}</p>
-          </div>
-        </div>
-      )}
-      
-      {liquidationMsg && (
-        <div className={`mb-3 p-3 rounded-lg border relative z-10 backdrop-blur-sm ${
-          liquidationMsg.type === 'error'
-            ? 'bg-rose-500/10 border-rose-500/40'
-            : 'bg-yellow-500/10 border-yellow-500/40'
-        }`}>
-          <div className={`flex items-start gap-2.5 ${
-            liquidationMsg.type === 'error'
-              ? 'text-rose-300'
-              : 'text-yellow-300'
-          }`}>
-            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <p className="text-xs leading-relaxed">{liquidationMsg.message.replace(/[💔]/g, '').trim()}</p>
-          </div>
-        </div>
-      )}
-      
-      {/* Notes section */}
-      <div className="relative z-10">
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            setShowNotes(!showNotes)
-          }}
-          className="w-full flex items-center justify-between text-xs text-zinc-500 hover:text-zinc-300 transition-colors mb-2"
-        >
-          <span className="flex items-center gap-1.5">
-            <MessageSquare className="w-3.5 h-3.5" />
-            {trade.notes ? "Edit Notes" : "Add Notes"}
-          </span>
-          {trade.notes && <span className="text-[10px]">({trade.notes.length} chars)</span>}
-        </button>
-        {showNotes && (
-          <div className="space-y-2">
-            <Input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add your thoughts, strategy, or feedback..."
-              className="text-xs bg-zinc-900/50 border-zinc-800"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={async (e) => {
-                  e.stopPropagation()
-                  setSavingNotes(true)
-                  try {
-                    const res = await fetch(`/api/trades/${trade.id}/notes`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ notes }),
-                    })
-                    if (res.ok) {
-                      setShowNotes(false)
-                      onUpdate()
-                    }
-                  } catch (err) {
-                    console.error("Failed to save notes:", err)
-                  } finally {
-                    setSavingNotes(false)
-                  }
-                }}
-                className="flex-1 h-7 text-xs bg-emerald-500 hover:bg-emerald-600"
-                disabled={savingNotes}
-              >
-                {savingNotes ? "Saving..." : "Save"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowNotes(false)
-                  setNotes(trade.notes || "")
-                }}
-                className="h-7 text-xs"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
+          </button>
         )}
       </div>
+      
+      {/* SL hit message */}
+      {liquidationMsg && (
+        <div className={`mb-2 px-2 py-1.5 rounded-lg border relative z-10 ${
+          liquidationMsg.type === 'error' ? 'bg-rose-500/10 border-rose-500/30' : 'bg-yellow-500/10 border-yellow-500/30'
+        }`}>
+          <p className={`text-[10px] ${liquidationMsg.type === 'error' ? 'text-rose-300' : 'text-yellow-300'}`}>
+            {liquidationMsg.message.replace(/[💔]/g, '').trim()}
+          </p>
+        </div>
+      )}
+      
+      {/* Compact notes toggle */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowNotes(!showNotes) }}
+        className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors relative z-10"
+      >
+        <MessageSquare className="w-3 h-3" />
+        <span>{trade.notes ? "Notes" : "Add note"}</span>
+      </button>
+      {showNotes && (
+        <div className="mt-2 space-y-1.5 relative z-10">
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add notes..."
+            className="text-[10px] h-7 bg-zinc-900/50 border-zinc-800"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="flex gap-1.5">
+            <Button size="sm" onClick={async (e) => {
+              e.stopPropagation(); setSavingNotes(true)
+              try {
+                const res = await fetch(`/api/trades/${trade.id}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes }) })
+                if (res.ok) { setShowNotes(false); onUpdate() }
+              } catch (err) { console.error("Failed to save notes:", err) }
+              finally { setSavingNotes(false) }
+            }} className="flex-1 h-6 text-[10px] bg-emerald-500 hover:bg-emerald-600" disabled={savingNotes}>
+              {savingNotes ? "..." : "Save"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setShowNotes(false); setNotes(trade.notes || "") }} className="h-6 text-[10px]">
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       {trade.signal_id && (
-        <div className="mt-4 relative z-10">
-          <Button
-            variant="outline"
-            className="w-full h-9 text-xs border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10"
-            onClick={(e) => {
-              e.stopPropagation()
-              router.push(`/?signal=${trade.signal_id}`)
-            }}
-          >
-            View original signal
-          </Button>
+        <div className="mt-2 relative z-10">
+          <Link href={`/?signal=${trade.signal_id}`}>
+            <Button
+              variant="outline"
+              className="w-full h-8 text-[10px] border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+            >
+              View original signal
+            </Button>
+          </Link>
         </div>
       )}
 
-      {/* Bottom row: Opened date and Closed info */}
-      <div className="flex items-center justify-between text-xs text-zinc-500 pt-3 border-t border-zinc-800/50 relative z-10">
-        <span>Opened {formatDate(trade.opened_at)}</span>
-        {trade.status !== "open" && closePrice !== null && closePrice !== undefined && (
-          <span className="text-zinc-400">
-            Closed at {formatNumber(closePrice, 2)} • {formatDate(closedAt)}
-          </span>
-        )}
-      </div>
+      {/* Compact footer */}
+      {trade.status !== "open" && closePrice !== null && (
+        <div className="flex items-center justify-between text-[9px] text-zinc-500 pt-2 border-t border-zinc-800/30 mt-2 relative z-10">
+          <span>Closed @ {formatNumber(closePrice, 2)}</span>
+          <span>{formatDate(closedAt)}</span>
+        </div>
+      )}
     </Card>
   )
 }

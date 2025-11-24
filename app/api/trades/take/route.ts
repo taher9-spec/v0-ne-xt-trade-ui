@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { createSupabaseClient } from "@/lib/supabase/client"
+import { supabaseServer } from "@/lib/supabaseServer"
 import { assertUserWithinSignalQuota } from "@/lib/supabase/quota"
 import { checkRateLimit, getClientIP } from "@/lib/rateLimit"
 
@@ -55,27 +55,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid signal ID" }, { status: 400 })
     }
 
-    // 4. Initialize Supabase client
-   const supabase = createServerClient(cookies); // or whatever helper you use
-
-const { data, error } = await supabase
-  .from('trades')
-  .insert({
-    user_id: user.id,        // must match auth.uid()
-    signal_id,
-    symbol,
-    direction,
-    entry_price,
-    exit_price,
-    timeframe,
-    status: 'open'
-  });
-
+    // 4. Initialize Supabase client (server-side with service role for RLS bypass)
+    const supabase = supabaseServer()
 
     // 5. Check user quota (plan limits)
     const quotaCheck = await assertUserWithinSignalQuota(userId)
     if (!quotaCheck.allowed) {
-      return NextResponse.json({ error: "Quota exceeded" }, { status: 403 })
+      return NextResponse.json(
+        { error: quotaCheck.reason || "Daily signal limit reached. Upgrade your plan for more signals." },
+        { status: 403 }
+      )
     }
 
     // 6. Fetch signal details

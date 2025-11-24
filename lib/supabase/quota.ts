@@ -1,58 +1,125 @@
-import { createSupabaseClient } from "./client"
+import { supabaseServer } from "../supabaseServer"
 
 /**
- * Check if user is within signal quota
- * For now always returns true, but ready to implement checks later
+ * Check if user is within signal quota based on their plan limits
  * 
- * TODO: Implement actual quota checking based on:
- * - User's plan (free, starter, pro, elite)
- * - signals_used_today field in users table
- * - Plan limits (e.g., free = 2 signals/day, starter = 10/day, etc.)
+ * Implementation:
+ * - Reads user's plan_code from users table
+ * - Gets plan's signals_per_day limit from plans.features JSONB
+ * - Counts trades created today by the user
+ * - Compares used vs limit
  */
 export async function assertUserWithinSignalQuota(userId: string): Promise<{
   allowed: boolean
   reason?: string
 }> {
   try {
-    const supabase = createSupabaseClient()
+    const supabase = supabaseServer()
 
-    // TODO: Read user's plan and signals_used_today
-    // const { data: user } = await supabase
-    //   .from("users")
-    //   .select("plan_code, signals_used_today")
-    //   .eq("id", userId)
-    //   .single()
-    //
-    // if (!user) {
-    //   return { allowed: false, reason: "User not found" }
-    // }
-    //
-    // const planLimits: Record<string, number> = {
-    //   free: 2,
-    //   starter: 10,
-    //   pro: 50,
-    //   elite: -1, // unlimited
-    // }
-    //
-    // const limit = planLimits[user.plan_code || "free"] || 2
-    // if (limit === -1) {
-    //   return { allowed: true } // Unlimited
-    // }
-    //
-    // const used = user.signals_used_today || 0
-    // if (used >= limit) {
-    //   return {
-    //     allowed: false,
-    //     reason: `Daily signal limit reached (${used}/${limit}). Upgrade your plan for more signals.`,
-    //   }
-    // }
+    // 1. Get user's plan_code
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("plan_code")
+      .eq("id", userId)
+      .single()
 
-    // For now, always allow
+    if (userError || !user) {
+      console.error("[supabase/quota] User fetch error:", userError)
+      return { allowed: false, reason: "User not found" }
+    }
+
+    const planCode = user.plan_code || "free"
+
+    // 2. Get plan's signals_per_day limit from features JSONB
+    const { data: plan, error: planError } = await supabase
+      .from("plans")
+      .select("features")
+      .eq("code", planCode)
+      .single()
+
+    if (planError || !plan) {
+      console.error("[supabase/quota] Plan fetch error:", planError)
+      // Fallback to free plan limits if plan not found
+      const limit = 2
+      const used = await countTradesToday(supabase, userId)
+      if (used >= limit) {
+        return {
+          allowed: false,
+          reason: `Daily signal limit reached (${used}/${limit}). Upgrade your plan for more signals.`,
+        }
+      }
+      return { allowed: true }
+    }
+
+    // Extract signals_per_day from features JSONB
+    const features = plan.features as any
+    const signalsPerDay = features?.signals_per_day
+
+    // Handle unlimited plans (elite plan has "unlimited" as string)
+    if (signalsPerDay === "unlimited" || signalsPerDay === -1) {
+      return { allowed: true }
+    }
+
+    // Parse limit (should be a number)
+    const limit = typeof signalsPerDay === "number" ? signalsPerDay : parseInt(String(signalsPerDay || "2"), 10)
+    if (isNaN(limit) || limit <= 0) {
+      // Invalid limit, default to free plan (2)
+      const defaultLimit = 2
+      const used = await countTradesToday(supabase, userId)
+      if (used >= defaultLimit) {
+        return {
+          allowed: false,
+          reason: `Daily signal limit reached (${used}/${defaultLimit}). Upgrade your plan for more signals.`,
+        }
+      }
+      return { allowed: true }
+    }
+
+    // 3. Count trades created today by this user
+    const used = await countTradesToday(supabase, userId)
+
+    // 4. Check if user has exceeded limit
+    if (used >= limit) {
+      return {
+        allowed: false,
+        reason: `Daily signal limit reached (${used}/${limit}). Upgrade your plan for more signals.`,
+      }
+    }
+
     return { allowed: true }
   } catch (error: any) {
     console.error("[supabase/quota] assertUserWithinSignalQuota error:", error)
     // On error, allow (fail open) - can be changed to fail closed if needed
     return { allowed: true }
+  }
+}
+
+/**
+ * Count how many trades the user has created today (UTC)
+ */
+async function countTradesToday(supabase: any, userId: string): Promise<number> {
+  try {
+    // Get start of today in UTC
+    const now = new Date()
+    const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0))
+    const startOfTodayISO = startOfToday.toISOString()
+
+    // Count trades created today
+    const { count, error } = await supabase
+      .from("trades")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .gte("opened_at", startOfTodayISO)
+
+    if (error) {
+      console.error("[supabase/quota] Count trades error:", error)
+      return 0 // On error, assume 0 (fail open)
+    }
+
+    return count || 0
+  } catch (error: any) {
+    console.error("[supabase/quota] countTradesToday error:", error)
+    return 0 // On error, assume 0 (fail open)
   }
 }
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
-import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown } from "lucide-react"
+import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -395,9 +395,14 @@ export default function NextTradeUI() {
         </div>
         <div className="flex items-center gap-2">
           <Link href="/symbols">
-            <Badge variant="outline" className="border-zinc-700 text-zinc-400 hover:border-zinc-600 transition-colors cursor-pointer">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-xs border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white transition-colors"
+            >
+              <Coins className="w-3 h-3 mr-1.5" />
               Symbols
-            </Badge>
+            </Button>
           </Link>
           <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/5 text-emerald-400">
             <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse" />
@@ -435,7 +440,9 @@ export default function NextTradeUI() {
         ) : (
           <div className="space-y-3">
             {signals.map((signal) => (
-              <SignalCard key={signal.id} signal={signal} />
+              <div key={signal.id} id={`signal-${signal.id}`}>
+                <SignalCard signal={signal} />
+              </div>
             ))}
           </div>
         )}
@@ -1418,15 +1425,10 @@ export default function NextTradeUI() {
                 <Home className="w-5 h-5" />
                 <span className="text-[10px] font-medium">Home</span>
               </button>
-              <button
-                onClick={() => setActiveTab("journal")}
-                className={`flex flex-col items-center gap-1 transition-colors ${
-                  activeTab === "journal" ? "text-emerald-400" : "text-zinc-500"
-                }`}
-              >
-                <BookOpen className="w-5 h-5" />
-                <span className="text-[10px] font-medium">Journal</span>
-              </button>
+              <Link href="/symbols" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
+                <Coins className="w-5 h-5" />
+                <span className="text-[10px] font-medium">Symbols</span>
+              </Link>
               <button onClick={() => setActiveTab("ai")} className="flex flex-col items-center -mt-8">
                 <div
                   className={`w-14 h-14 rounded-full flex items-center justify-center mb-1 ${
@@ -1440,6 +1442,15 @@ export default function NextTradeUI() {
                 <span className={`text-[10px] font-medium ${activeTab === "ai" ? "text-purple-400" : "text-zinc-500"}`}>
                   AI
                 </span>
+              </button>
+              <button
+                onClick={() => setActiveTab("journal")}
+                className={`flex flex-col items-center gap-1 transition-colors ${
+                  activeTab === "journal" ? "text-emerald-400" : "text-zinc-500"
+                }`}
+              >
+                <BookOpen className="w-5 h-5" />
+                <span className="text-[10px] font-medium">Journal</span>
               </button>
               <button
                 onClick={() => setActiveTab("account")}

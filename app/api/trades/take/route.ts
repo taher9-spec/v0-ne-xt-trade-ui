@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { supabaseServer } from "@/lib/supabaseServer"
+import { createSupabaseClient } from "@/lib/supabase/client"
+import { assertUserWithinSignalQuota } from "@/lib/supabase/quota"
 import { checkRateLimit, getClientIP } from "@/lib/rateLimit"
 
 // Rate limiting: 10 trades per user per minute
@@ -37,7 +38,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "signalId is required" }, { status: 400 })
     }
 
-    const supabase = supabaseServer()
+    // Check quota before proceeding
+    const quotaCheck = await assertUserWithinSignalQuota(userId)
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({ error: quotaCheck.reason || "Quota exceeded" }, { status: 403 })
+    }
+
+    const supabase = createSupabaseClient()
 
     // Fetch signal details with symbol join
     const { data: signal, error: signalError } = await supabase

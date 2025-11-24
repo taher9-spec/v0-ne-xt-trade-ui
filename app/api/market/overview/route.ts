@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getAllSymbols } from "@/lib/symbols"
+import { getAllSymbols } from "@/lib/supabase/symbols"
 import { getFmpQuote } from "@/lib/fmp"
 
 /**

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
-import { getAllSymbols } from "@/lib/symbols"
+import { getAllSymbols } from "@/lib/supabase/symbols"
 
+/**
+ * GET /api/symbols
+ * Returns all active symbols from the database
+ */
 export async function GET() {
   try {
     const symbols = await getAllSymbols()
@@ -10,4 +14,3 @@ export async function GET() {
     return NextResponse.json({ error: "Internal server error", symbols: [] }, { status: 500 })
   }
 }
-

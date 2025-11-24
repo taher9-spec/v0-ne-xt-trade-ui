@@ -11,6 +11,7 @@ import { formatNumber } from "@/types/trades"
 
 export default function SignalsPage() {
   const [signals, setSignals] = useState<Signal[]>([])
+  const [symbols, setSymbols] = useState<Array<{ fmp_symbol: string; display_symbol: string }>>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<"all" | "active" | "history">("all")
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
@@ -19,9 +20,12 @@ export default function SignalsPage() {
     const fetchSignals = async () => {
       setLoading(true)
       try {
-        // Build URL with status filter
+        // Build URL with status filter and symbol filter
         const statusParam = filter === "all" ? "all" : filter === "active" ? "active" : "history"
-        const url = `/api/signals/all?status=${statusParam}`
+        let url = `/api/signals/all?status=${statusParam}`
+        if (selectedSymbol) {
+          url += `&symbol=${encodeURIComponent(selectedSymbol)}`
+        }
         const res = await fetch(url, { cache: "no-store" })
         if (!res.ok) {
           console.error("[v0] Failed to fetch signals:", res.status)
@@ -39,22 +43,26 @@ export default function SignalsPage() {
       }
     }
     fetchSignals()
-  }, [filter]) // Re-fetch when filter changes
+  }, [filter, selectedSymbol]) // Re-fetch when filter or symbol changes
 
-  // Get unique symbols for filter
-  const uniqueSymbols = [...new Set(signals.map((s) => s.symbol))].sort()
+  // Fetch symbols from database
+  useEffect(() => {
+    const fetchSymbols = async () => {
+      try {
+        const res = await fetch("/api/symbols", { cache: "no-store" })
+        if (res.ok) {
+          const json = await res.json()
+          setSymbols(json.symbols || [])
+        }
+      } catch (e) {
+        console.error("[v0] Error fetching symbols:", e)
+      }
+    }
+    fetchSymbols()
+  }, [])
 
-  // Filter signals
-  let filteredSignals = signals
-  if (filter === "active") {
-    filteredSignals = signals.filter((s) => s.status === "active" || s.status === "pending")
-  } else if (filter === "history") {
-    filteredSignals = signals.filter((s) => s.status !== "active" && s.status !== "pending")
-  }
-
-  if (selectedSymbol) {
-    filteredSignals = filteredSignals.filter((s) => s.symbol === selectedSymbol)
-  }
+  // Signals are already filtered by the API based on filter and selectedSymbol
+  const filteredSignals = signals
 
   // Format relative time
   const formatRelativeTime = (dateString: string) => {
@@ -118,16 +126,16 @@ export default function SignalsPage() {
             </Button>
           </div>
 
-          {uniqueSymbols.length > 0 && (
+          {symbols.length > 0 && (
             <select
               value={selectedSymbol || ""}
               onChange={(e) => setSelectedSymbol(e.target.value || null)}
               className="h-8 px-3 text-xs bg-zinc-950 border border-zinc-800 rounded-md text-white"
             >
               <option value="">All Symbols</option>
-              {uniqueSymbols.map((symbol) => (
-                <option key={symbol} value={symbol}>
-                  {symbol}
+              {symbols.map((symbol) => (
+                <option key={symbol.fmp_symbol} value={symbol.fmp_symbol}>
+                  {symbol.display_symbol || symbol.fmp_symbol}
                 </option>
               ))}
             </select>

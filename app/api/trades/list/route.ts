@@ -35,14 +35,15 @@ export async function GET(req: NextRequest) {
       }, { status: 500 })
     }
 
-    // Fetch live prices for open trades and calculate floating PnL
-    const openTrades = trades?.filter((t) => t.status === "open") || []
+    // Fetch live prices for ALL trades (open and closed) and compute PnL
+    // This ensures consistent PnL calculation using current FMP prices
+    const allTrades = trades || []
     
-    if (openTrades.length > 0) {
-      // Get unique symbols from open trades (use fmp_symbol if available via join, otherwise symbol)
+    if (allTrades.length > 0) {
+      // Get unique symbols from all trades (use fmp_symbol if available via join, otherwise symbol)
       const uniqueSymbols = [
         ...new Set(
-          openTrades
+          allTrades
             .map((t) => {
               // Prefer fmp_symbol from joined symbols table, fallback to symbol
               const fmpSymbol = (t as any).symbols?.fmp_symbol
@@ -56,46 +57,60 @@ export async function GET(req: NextRequest) {
         try {
           const priceMap = await getLatestPriceForSymbols(uniqueSymbols)
 
-          // Calculate floating PnL for each open trade
+          // Calculate PnL for each trade using consistent formula
           trades?.forEach((trade) => {
-            if (trade.status === "open" && trade.entry_price) {
-              const fmpSymbol = (trade as any).symbols?.fmp_symbol || trade.symbol
-              const currentPrice = priceMap[fmpSymbol]
+            if (!trade.entry_price) return
 
-              if (currentPrice && currentPrice > 0) {
-                const entry = typeof trade.entry_price === "number" 
-                  ? trade.entry_price 
-                  : parseFloat(String(trade.entry_price || "0"))
-                const sl = trade.sl 
-                  ? (typeof trade.sl === "number" ? trade.sl : parseFloat(String(trade.sl)))
-                  : entry
-                const riskPerUnit = Math.abs(entry - sl)
+            const fmpSymbol = (trade as any).symbols?.fmp_symbol || trade.symbol
+            const currentPrice = priceMap[fmpSymbol]
 
-                if (riskPerUnit > 0) {
-                  // Calculate R-multiple (floating)
-                  let openR = 0
-                  if (trade.direction === "long") {
-                    openR = (currentPrice - entry) / riskPerUnit
-                  } else {
-                    openR = (entry - currentPrice) / riskPerUnit
-                  }
+            if (!currentPrice || currentPrice <= 0) return
 
-                  // Calculate PnL%
-                  const pnlPercent = trade.direction === "long"
-                    ? ((currentPrice - entry) / entry) * 100
-                    : ((entry - currentPrice) / entry) * 100
+            const entry = typeof trade.entry_price === "number" 
+              ? trade.entry_price 
+              : parseFloat(String(trade.entry_price || "0"))
+            
+            if (entry <= 0) return
 
-                  // Attach to trade object
-                  ;(trade as any).floating_r = openR
-                  ;(trade as any).floating_pnl_percent = pnlPercent
-                  ;(trade as any).current_price = currentPrice
-                }
+            const sl = trade.sl 
+              ? (typeof trade.sl === "number" ? trade.sl : parseFloat(String(trade.sl)))
+              : entry
+            
+            const risk = Math.abs(entry - sl)
+            
+            if (risk <= 0) return
+
+            // Direction factor: +1 for long, -1 for short
+            const directionFactor = trade.direction === "long" ? 1 : -1
+            
+            // Price move from entry
+            const move = (currentPrice - entry) * directionFactor
+            
+            // R-value: move / risk
+            const rValue = move / risk
+            
+            // PnL%: (move / entry) * 100
+            const pnlPercent = (move / entry) * 100
+
+            // For open trades: attach as floating values
+            if (trade.status === "open") {
+              ;(trade as any).floating_r = rValue
+              ;(trade as any).floating_pnl_percent = pnlPercent
+              ;(trade as any).current_price = currentPrice
+            } else {
+              // For closed trades: use stored values if they exist, otherwise compute
+              // This allows manual override while defaulting to calculated values
+              if (trade.result_r === null || trade.result_r === undefined) {
+                ;(trade as any).result_r = rValue
+              }
+              if (trade.pnl_percent === null || trade.pnl_percent === undefined) {
+                ;(trade as any).pnl_percent = pnlPercent
               }
             }
           })
         } catch (err) {
-          console.error("[v0] Error fetching live prices for open trades:", err)
-          // Continue without live prices - trades will show without floating PnL
+          console.error("[v0] Error fetching live prices for trades:", err)
+          // Continue without live prices - trades will show stored values or defaults
         }
       }
     }

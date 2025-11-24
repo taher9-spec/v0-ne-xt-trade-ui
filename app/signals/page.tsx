@@ -19,7 +19,10 @@ export default function SignalsPage() {
     const fetchSignals = async () => {
       setLoading(true)
       try {
-        const res = await fetch("/api/signals/all", { cache: "no-store" })
+        // Build URL with status filter
+        const statusParam = filter === "all" ? "all" : filter === "active" ? "active" : "history"
+        const url = `/api/signals/all?status=${statusParam}`
+        const res = await fetch(url, { cache: "no-store" })
         if (!res.ok) {
           console.error("[v0] Failed to fetch signals:", res.status)
           setSignals([])
@@ -36,7 +39,7 @@ export default function SignalsPage() {
       }
     }
     fetchSignals()
-  }, [])
+  }, [filter]) // Re-fetch when filter changes
 
   // Get unique symbols for filter
   const uniqueSymbols = [...new Set(signals.map((s) => s.symbol))].sort()

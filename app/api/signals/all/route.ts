@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
 
     const searchParams = req.nextUrl.searchParams
     const limit = parseInt(searchParams.get("limit") || "100", 10)
+    const statusFilter = searchParams.get("status") || "all" // all | active | history
 
     let supabase
     try {
@@ -29,12 +30,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Database connection failed", details: error.message, signals: [] }, { status: 500 })
     }
 
-    // Fetch all signals, ordered by created_at desc
+    // Build query based on status filter
     let query = supabase
       .from("signals")
       .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
-      .order("created_at", { ascending: false })
-      .limit(limit)
+
+    // Apply status filter
+    if (statusFilter === "active") {
+      query = query.eq("status", "active")
+    } else if (statusFilter === "history") {
+      query = query.in("status", ["closed", "expired", "hit_tp", "stopped_out"])
+    }
+    // "all" = no status filter
+
+    query = query.order("created_at", { ascending: false }).limit(limit)
 
     const { data, error } = await query
 

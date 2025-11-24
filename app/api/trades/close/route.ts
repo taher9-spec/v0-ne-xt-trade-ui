@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
         result_r: resultR,
         rr: resultR,
         pnl_percent: pnlPercent,
-        pnl: pnl || null,
+        pnl: pnl,
       })
       .eq("id", body.tradeId)
       .select()

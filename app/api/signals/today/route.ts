@@ -28,24 +28,25 @@ export async function GET(req: NextRequest) {
     // Fetch signals from today (today at 00:00 UTC)
     const today = new Date()
     today.setUTCHours(0, 0, 0, 0)
-    const todayISO = today.toISOString()
+    const startOfTodayUtc = today.toISOString()
 
     // Build query - join with symbols if symbol_id exists
+    // Query signals with status='active' and activated_at >= today (or created_at if activated_at is null)
     let query = supabase
       .from("signals")
       .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
-      .gte("created_at", todayISO)
-      .order("created_at", { ascending: false })
+      .eq("status", "active")
+      .order("activated_at", { ascending: false, nullsFirst: false })
       .limit(limit)
+
+    // Filter by activated_at >= today (prefer activated_at, fallback to created_at)
+    // Use .or() to check both activated_at and created_at
+    query = query.or(`activated_at.gte.${startOfTodayUtc},and(activated_at.is.null,created_at.gte.${startOfTodayUtc})`)
 
     // Filter by symbolId if provided
     if (symbolId) {
       query = query.eq("symbol_id", symbolId)
     }
-
-    // Filter by status if column exists (status column exists based on schema check)
-    // Only show active or pending signals
-    query = query.in("status", ["active", "pending"])
 
     const { data, error } = await query
 

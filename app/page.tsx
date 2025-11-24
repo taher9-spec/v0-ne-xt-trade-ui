@@ -689,6 +689,10 @@ export default function NextTradeUI() {
     const logoUrl = getSymbolLogo(signal.symbol, signal.symbols?.asset_class)
     const [logoError, setLogoError] = useState(false)
     const assetClass = signal.symbols?.asset_class || 'forex'
+    
+    // Calculate volatility from price change
+    const volatility = priceChange !== null ? Math.min(100, Math.abs(priceChange) * 20) : 0
+    const volatilityColor = volatility > 70 ? 'rose' : volatility > 40 ? 'yellow' : 'emerald'
 
     return (
       <Card className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group">

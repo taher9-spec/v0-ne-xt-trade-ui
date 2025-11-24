@@ -6,13 +6,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
 // Type declarations for Deno global (for IDE type checking)
-declare global {
-  const Deno: {
-    env: {
-      get(key: string): string | undefined
-    }
-    serve(handler: (req: Request) => Response | Promise<Response>): void
+// Note: Deno is already available in the runtime, this is just for TypeScript
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined
   }
+  serve(handler: (req: Request) => Response | Promise<Response>): void
 }
 
 const FMP_API_KEY = Deno.env.get("FMP_API_KEY")
@@ -20,8 +19,13 @@ const FMP_BASE = "https://financialmodelingprep.com/api/v3"
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
 
-// Signal score threshold (0-100)
-const SIGNAL_SCORE_THRESHOLD = 70
+// Signal score thresholds for confidence levels (0-100)
+// Level 1 (60-74): Partial matches, lower confidence
+// Level 2 (75-89): Good matches, medium confidence  
+// Level 3 (90+): Strong matches, high confidence
+const SIGNAL_SCORE_THRESHOLD = 60 // Minimum to generate signal
+const CONFIDENCE_LEVEL_2 = 75
+const CONFIDENCE_LEVEL_3 = 90
 
 // Timeframe-aware freshness windows (in hours)
 const FRESHNESS_WINDOWS: Record<string, number> = {
@@ -427,6 +431,7 @@ async function buildSignalFromFmp(
   target: number
   score: number
   reason: string
+  confidenceLevel: 1 | 2 | 3
 } | null> {
   // Fetch candles and EMA data in parallel
   // We'll calculate RSI, MACD, and ATR locally from candles
@@ -434,7 +439,7 @@ async function buildSignalFromFmp(
     fetchFmpIndicator(symbol, "ema", 20, timeframe),
     fetchFmpIndicator(symbol, "ema", 50, timeframe),
     fetchFmpIndicator(symbol, "ema", 200, timeframe),
-    fetchHistoricalCandles(symbol, timeframe, 200),
+    fetchHistoricalCandles(symbol, timeframe, 200), // Need 200 candles for reliable indicators
   ])
 
   // Validate EMA data - if FMP fails, calculate locally as fallback
@@ -449,6 +454,7 @@ async function buildSignalFromFmp(
     console.warn(`[smart-endpoint] Insufficient candle data for ${symbol} ${timeframe} (got ${candles?.length || 0}, need ${minCandles})`)
     // Try with what we have if it's close (e.g., 150+ candles)
     if (!candles || candles.length < 150) {
+      console.log(`[smart-endpoint] Skipping ${symbol} ${timeframe}: Not enough candles for reliable indicators.`)
       return null
     }
   }
@@ -605,6 +611,16 @@ async function buildSignalFromFmp(
     return null
   }
 
+  // Calculate confidence level (1-3) based on score
+  let confidenceLevel: 1 | 2 | 3
+  if (score >= CONFIDENCE_LEVEL_3) {
+    confidenceLevel = 3
+  } else if (score >= CONFIDENCE_LEVEL_2) {
+    confidenceLevel = 2
+  } else {
+    confidenceLevel = 1
+  }
+
   // Calculate entry, stop, target
   const risk = atrNow * 1.5
   let entry: number
@@ -648,6 +664,7 @@ async function buildSignalFromFmp(
     target,
     score,
     reason: reasonParts.join(", "),
+    confidenceLevel,
   }
 }
 
@@ -771,18 +788,19 @@ Deno.serve(async (req: Request) => {
             const existingScore = parseFloat(String(existing.signal_score || 0))
             if (signal.score > existingScore) {
               // Update existing signal
-              const { error: updateError } = await supabase
-                .from("signals")
-                .update({
-                  entry: signal.entry,
-                  sl: signal.stop,
-                  tp1: signal.target,
-                  signal_score: signal.score,
-                  engine_version: "v2-mtf-ta",
-                  reason_summary: signal.reason,
-                  activated_at: new Date().toISOString(),
-                })
-                .eq("id", existing.id)
+                  const { error: updateError } = await supabase
+                    .from("signals")
+                    .update({
+                      entry: signal.entry,
+                      sl: signal.stop,
+                      tp1: signal.target,
+                      signal_score: signal.score,
+                      engine_version: "v2-mtf-ta",
+                      reason_summary: signal.reason,
+                      activated_at: new Date().toISOString(),
+                      confidence: signal.confidenceLevel, // 1-3 based on score ranges (60-74=1, 75-89=2, 90+=3)
+                    })
+                    .eq("id", existing.id)
 
               if (updateError) {
                 stats.errors.push(`${fmpSymbol} ${timeframe}: Update error - ${updateError.message}`)
@@ -816,7 +834,7 @@ Deno.serve(async (req: Request) => {
               activated_at: new Date().toISOString(),
               reason_summary: signal.reason,
               rr_ratio: 2.5,
-              confidence: Math.min(5, Math.floor(signal.score / 20)), // 1-5 based on score
+              confidence: signal.confidenceLevel, // 1-3 based on score ranges (60-74=1, 75-89=2, 90+=3)
             })
             .select("id")
             .single()
@@ -834,7 +852,7 @@ Deno.serve(async (req: Request) => {
 
           if (insertedSignal) {
             stats.inserted++
-            console.log(`[smart-endpoint] ✅ Created ${signal.direction} signal for ${fmpSymbol} ${timeframe} (score: ${signal.score})`)
+            console.log(`[smart-endpoint] ✅ Created ${signal.direction} signal for ${fmpSymbol} ${timeframe} (score: ${signal.score}, confidence: ${signal.confidenceLevel})`)
           }
         } catch (symbolTfError: any) {
           const errorMsg = `${fmpSymbol} ${timeframe}: ${symbolTfError.message || "Unknown error"}`

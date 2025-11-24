@@ -16,6 +16,7 @@ import Image from "next/image"
 import { isTelegramWebApp, getTelegramInitData } from "@/lib/telegramWebApp"
 import { Trade, TradeStats, formatNumber, parseNumber } from "@/types/trades"
 import type { Signal } from "@/lib/types"
+import { createSupabaseClient } from "@/lib/supabase/client"
 
 type SignalLocal = {
   id: string
@@ -112,9 +113,31 @@ export default function NextTradeUI() {
     }
     fetchSignals()
     
-    // Refresh signals every 30 seconds
-    const interval = setInterval(fetchSignals, 30000)
-    return () => clearInterval(interval)
+    // Set up Realtime subscription for signals
+    const supabase = createSupabaseClient()
+    const channel = supabase
+      .channel("signals-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "signals",
+          filter: "status=eq.active",
+        },
+        (payload) => {
+          console.log("[v0] Realtime signal update:", payload)
+          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+            // Refresh signals when new active signal is inserted or updated
+            fetchSignals()
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   // Removed market overview and chart data fetching - no longer needed
@@ -156,14 +179,35 @@ export default function NextTradeUI() {
       }
       fetchTrades()
 
-      // Poll for live PnL updates every 10 seconds when Journal tab is active and user is logged in
-      const interval = setInterval(() => {
-        if (activeTab === "journal" && user) {
-          fetchTrades()
-        }
-      }, 10000) // 10 seconds for more responsive updates
+      // Set up Realtime subscription for trades (only if user is logged in)
+      let channel: any = null
+      if (user?.id) {
+        const supabase = createSupabaseClient()
+        channel = supabase
+          .channel("trades-changes")
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "trades",
+              filter: `user_id=eq.${user.id}`,
+            },
+            (payload) => {
+              console.log("[v0] Realtime trade update:", payload)
+              // Refresh trades when user's trade is inserted or updated
+              fetchTrades()
+            }
+          )
+          .subscribe()
+      }
 
-      return () => clearInterval(interval)
+      return () => {
+        if (channel) {
+          const supabase = createSupabaseClient()
+          supabase.removeChannel(channel)
+        }
+      }
     }
   }, [activeTab, user])
 
@@ -350,6 +394,11 @@ export default function NextTradeUI() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/symbols">
+            <Badge variant="outline" className="border-zinc-700 text-zinc-400 hover:border-zinc-600 transition-colors cursor-pointer">
+              Symbols
+            </Badge>
+          </Link>
           <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/5 text-emerald-400">
             <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse" />
             Live

@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js"
 
 /**
- * Create Supabase client using anon key (for client-side and API routes)
+ * Create Supabase client for client-side use (with Realtime support)
  * This respects RLS policies and is safe for frontend use
  */
 export function createSupabaseClient() {
@@ -18,7 +18,12 @@ export function createSupabaseClient() {
 
   try {
     return createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false },
+      auth: { persistSession: true },
+      realtime: {
+        params: {
+          eventsPerSecond: 10,
+        },
+      },
     })
   } catch (error: any) {
     console.error("[supabase] Failed to create client:", error)

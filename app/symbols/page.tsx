@@ -210,13 +210,8 @@ export default function SymbolsPage() {
   const assetClasses = Array.from(new Set(symbols.map((s) => s.asset_class)))
 
   const handleSymbolClick = (symbol: SymbolWithPrice) => {
-    if (symbol.activeSignal) {
-      // Navigate to home page and show signal details
-      router.push(`/?signal=${symbol.activeSignal.id}`)
-    } else {
-      // Show symbol details or navigate to signals filtered by symbol
-      router.push(`/signals?symbol=${symbol.display_symbol}`)
-    }
+    // Navigate to signals page filtered by this symbol
+    router.push(`/signals?symbol=${encodeURIComponent(symbol.display_symbol)}&status=active`)
   }
 
   if (loading) {

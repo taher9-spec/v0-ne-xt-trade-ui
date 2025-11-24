@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
-import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins } from "lucide-react"
+import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins, Lock, LogOut, Check, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -11,12 +11,13 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 // Removed unused imports for market overview
 import { TelegramLoginButton } from "@/components/TelegramLoginButton"
-import { LogOut, Check } from "lucide-react"
 import Image from "next/image"
 import { isTelegramWebApp, getTelegramInitData } from "@/lib/telegramWebApp"
 import { Trade, TradeStats, formatNumber, parseNumber } from "@/types/trades"
 import type { Signal } from "@/lib/types"
 import { createSupabaseClient } from "@/lib/supabase/client"
+import { getSymbolLogo } from "@/lib/utils/symbolLogos"
+import { isSymbolUnlocked, getRequiredPlanForSymbol } from "@/lib/utils/planSymbols"
 
 type SignalLocal = {
   id: string
@@ -100,6 +101,25 @@ export default function NextTradeUI() {
         // Ensure we only use signals from API, no hardcoded data
         if (json.signals && Array.isArray(json.signals)) {
           setSignals(json.signals)
+          
+          // Check if URL has signal parameter and scroll to it
+          const urlParams = new URLSearchParams(window.location.search)
+          const signalId = urlParams.get("signal")
+          if (signalId) {
+            setTimeout(() => {
+              const signalElement = document.getElementById(`signal-${signalId}`)
+              if (signalElement) {
+                signalElement.scrollIntoView({ behavior: "smooth", block: "center" })
+                // Highlight the signal briefly
+                signalElement.classList.add("ring-2", "ring-emerald-500", "ring-opacity-50")
+                setTimeout(() => {
+                  signalElement.classList.remove("ring-2", "ring-emerald-500", "ring-opacity-50")
+                }, 2000)
+              }
+              // Clean URL
+              window.history.replaceState({}, "", window.location.pathname)
+            }, 300)
+          }
         } else {
           console.warn("[v0] Invalid signals response format:", json)
           setSignals([])
@@ -375,7 +395,7 @@ export default function NextTradeUI() {
   // Removed mainQuote - no longer needed
 
   const HomeSignals = () => (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-28">
       <header className="flex justify-between items-center pt-2">
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 relative shrink-0">
@@ -456,6 +476,11 @@ export default function NextTradeUI() {
     const [checkingTrade, setCheckingTrade] = useState(true)
     const [currentPrice, setCurrentPrice] = useState<number | null>(null)
     const [priceChange, setPriceChange] = useState<number | null>(null)
+    
+    // Check if signal is unlocked for user's plan
+    const planCode = user?.plan_code || null
+    const symbolUnlocked = isSymbolUnlocked(signal.symbol, planCode)
+    const requiredPlan = getRequiredPlanForSymbol(signal.symbol)
 
     // Check if user already has a trade for this signal (prevent duplicates)
     useEffect(() => {
@@ -656,53 +681,107 @@ export default function NextTradeUI() {
       : "long"
     const timestamp = signal.activated_at || signal.created_at
 
+    const logoUrl = getSymbolLogo(signal.symbol, signal.symbols?.asset_class)
+    const [logoError, setLogoError] = useState(false)
+    const assetClass = signal.symbols?.asset_class || 'forex'
+
     return (
-      <Card className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors relative overflow-hidden">
-        {/* Symbol logo as subtle background */}
-        <div className="absolute top-0 right-0 w-32 h-32 opacity-5 pointer-events-none">
-          <div className="w-full h-full bg-gradient-to-br from-emerald-500/20 to-rose-500/20 rounded-full blur-3xl" />
-        </div>
+      <Card className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group">
+        {/* Blur overlay for locked signals */}
+        {!symbolUnlocked && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-20 rounded-lg flex flex-col items-center justify-center p-4">
+            <div className="text-center space-y-3">
+              <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-2 border-amber-500/30 flex items-center justify-center">
+                <Lock className="w-8 h-8 text-amber-400" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white mb-1">Premium Signal</h4>
+                <p className="text-xs text-zinc-400 mb-3">
+                  Unlock {signal.symbol} signals with {requiredPlan === 'starter' ? 'Starter' : requiredPlan === 'pro' ? 'Pro' : 'Elite'} plan
+                </p>
+                <Button
+                  onClick={() => setActiveTab("account")}
+                  className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold px-4 py-2 h-8"
+                >
+                  <Crown className="w-3 h-3 mr-1.5" />
+                  Upgrade to {requiredPlan === 'starter' ? 'Starter' : requiredPlan === 'pro' ? 'Pro' : 'Elite'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         
-        <div className="flex items-start justify-between mb-3 relative z-10">
+        {/* Beautiful gradient background based on direction */}
+        <div className={`absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity ${
+          direction === "long"
+            ? "bg-gradient-to-br from-emerald-500/20 via-emerald-400/10 to-transparent"
+            : "bg-gradient-to-br from-rose-500/20 via-rose-400/10 to-transparent"
+        }`} />
+        
+        {/* Subtle pattern overlay */}
+        <div className="absolute inset-0 opacity-[0.02] bg-[radial-gradient(circle_at_1px_1px,rgb(255,255,255)_1px,transparent_0)] bg-[length:20px_20px]" />
+        
+        <div className="flex items-start justify-between mb-4 relative z-10">
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <div className="flex items-center gap-2">
-                {/* Symbol logo next to name */}
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-700">
-                  <span className="text-xs font-bold text-zinc-300">{signal.symbol.substring(0, 2)}</span>
+            <div className="flex items-center gap-2.5 mb-2 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                {/* Real symbol logo */}
+                {logoUrl && !logoError ? (
+                  <div className="w-10 h-10 rounded-lg bg-zinc-900/50 border border-zinc-800 flex items-center justify-center overflow-hidden p-1">
+                    <img 
+                      src={logoUrl} 
+                      alt={signal.symbol}
+                      className="w-full h-full object-contain"
+                      onError={() => setLogoError(true)}
+                    />
+                  </div>
+                ) : (
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
+                    direction === "long"
+                      ? "bg-emerald-500/10 border-emerald-500/30"
+                      : "bg-rose-500/10 border-rose-500/30"
+                  }`}>
+                    <span className="text-xs font-bold text-zinc-300">{signal.symbol.substring(0, 2)}</span>
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-lg font-bold text-white">{signal.symbol}</h3>
+                  {signal.symbols?.name && (
+                    <p className="text-[10px] text-zinc-500">{signal.symbols.name}</p>
+                  )}
                 </div>
-                <h3 className="text-lg font-bold">{signal.symbol}</h3>
               </div>
               
-              {/* Redesigned LONG/SHORT badge with background and arrow */}
+              {/* Beautiful LONG/SHORT badge with gradient and shadow */}
               <div
-                className={`h-6 px-2.5 rounded-md text-[10px] font-bold flex items-center gap-1 shadow-lg ${
+                className={`h-7 px-3 rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-xl transition-all ${
                   direction === "long"
-                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-black shadow-emerald-500/30"
-                    : "bg-gradient-to-r from-rose-500 to-rose-600 text-black shadow-rose-500/30"
+                    ? "bg-gradient-to-r from-emerald-500 via-emerald-500 to-emerald-600 text-white shadow-emerald-500/40 hover:shadow-emerald-500/60"
+                    : "bg-gradient-to-r from-rose-500 via-rose-500 to-rose-600 text-white shadow-rose-500/40 hover:shadow-rose-500/60"
                 }`}
               >
                 {direction === "long" ? (
-                  <TrendingUp className="w-3 h-3" />
+                  <TrendingUp className="w-3.5 h-3.5" />
                 ) : (
-                  <TrendingDown className="w-3 h-3" />
+                  <TrendingDown className="w-3.5 h-3.5" />
                 )}
                 {direction.toUpperCase()}
               </div>
               
               {signal.timeframe && (
-                <Badge variant="outline" className="h-6 text-[10px] border-zinc-700 text-zinc-400 bg-zinc-900/50">
+                <Badge variant="outline" className="h-7 px-2.5 text-[10px] border-zinc-700/50 text-zinc-400 bg-zinc-900/80 backdrop-blur-sm">
                   {signal.timeframe}
                 </Badge>
               )}
               {signal.status && signal.status === "active" && (
-                <Badge variant="outline" className="h-6 text-[10px] border-blue-500/30 bg-blue-500/10 text-blue-400">
+                <Badge variant="outline" className="h-7 px-2.5 text-[10px] border-blue-500/40 bg-blue-500/15 text-blue-400 backdrop-blur-sm animate-pulse">
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mr-1.5" />
                   ACTIVE
                 </Badge>
               )}
             </div>
-            <p className="text-xs text-zinc-500 mb-1">
-              {signal.reason_summary || "AI-powered signal"}
+            <p className="text-xs text-zinc-400 mb-1.5 leading-relaxed">
+              {signal.reason_summary || "AI-powered trading signal"}
             </p>
             {timestamp && (
               <p className="text-[10px] text-zinc-600">
@@ -741,36 +820,65 @@ export default function NextTradeUI() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-3 relative z-10">
-          <div className="bg-zinc-900 p-2 rounded-lg">
-            <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
-            <p className="text-sm font-bold">{formatNumber(entry, 2)}</p>
+        <div className="grid grid-cols-3 gap-3 mb-4 relative z-10">
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg hover:bg-zinc-900 transition-colors">
+            <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
+            <p className="text-base font-bold text-white">{formatNumber(entry, assetClass === 'forex' ? 5 : 2)}</p>
           </div>
-          <div className="bg-zinc-900 p-2 rounded-lg">
-            <p className="text-[10px] text-zinc-500 mb-0.5">Stop Loss</p>
-            <p className="text-sm font-bold text-rose-400">{formatNumber(stopLoss, 2)}</p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg hover:bg-zinc-900 transition-colors">
+            <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
+            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, assetClass === 'forex' ? 5 : 2)}</p>
           </div>
-          <div className="bg-zinc-900 p-2 rounded-lg">
-            <p className="text-[10px] text-zinc-500 mb-0.5">Target</p>
-            <p className="text-sm font-bold text-emerald-400">{target !== null && target !== undefined ? formatNumber(target, 2) : "TBD"}</p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg hover:bg-zinc-900 transition-colors">
+            <p className="text-[10px] text-zinc-500 mb-1">Target</p>
+            <p className="text-base font-bold text-emerald-400">{target !== null && target !== undefined ? formatNumber(target, assetClass === 'forex' ? 5 : 2) : "TBD"}</p>
           </div>
         </div>
 
         <Button
-          className={`w-full h-9 text-xs font-semibold relative z-10 ${
-            taken ? "bg-zinc-800 text-zinc-400 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-600 text-black"
+          className={`w-full h-11 text-sm font-bold relative z-10 transition-all duration-300 shadow-lg ${
+            taken || !symbolUnlocked
+              ? "bg-zinc-800/50 text-zinc-500 cursor-not-allowed border border-zinc-700/50" 
+              : direction === "long"
+              ? "bg-gradient-to-r from-emerald-500 via-emerald-500 to-emerald-600 hover:from-emerald-400 hover:via-emerald-500 hover:to-emerald-600 text-white shadow-emerald-500/40 hover:shadow-emerald-500/60"
+              : "bg-gradient-to-r from-rose-500 via-rose-500 to-rose-600 hover:from-rose-400 hover:via-rose-500 hover:to-rose-600 text-white shadow-rose-500/40 hover:shadow-rose-500/60"
           }`}
-          disabled={taken || loading || checkingTrade}
-          onClick={handleTakeSignal}
+          disabled={taken || loading || checkingTrade || !symbolUnlocked}
+          onClick={!symbolUnlocked ? () => setActiveTab("account") : handleTakeSignal}
         >
-          {checkingTrade ? "Checking..." : loading ? "Saving..." : taken ? "Signal Taken" : "Take Signal"}
+          {!symbolUnlocked ? (
+            <span className="flex items-center gap-2">
+              <Lock className="w-4 h-4" />
+              Upgrade to Unlock
+            </span>
+          ) : checkingTrade ? (
+            <span className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              Checking...
+            </span>
+          ) : loading ? (
+            <span className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              Adding to Journal...
+            </span>
+          ) : taken ? (
+            <span className="flex items-center gap-2">
+              <Check className="w-4 h-4" />
+              Added to Journal
+            </span>
+          ) : (
+            <span className="flex items-center gap-2">
+              {direction === "long" ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+              Add to Journal
+            </span>
+          )}
         </Button>
       </Card>
     )
   }
 
   const MyJournal = () => (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-28">
       <header className="flex justify-between items-center pt-2">
         <div>
           <h1 className="text-xl font-bold">My Trades</h1>
@@ -1198,7 +1306,7 @@ export default function NextTradeUI() {
   const Account = () => {
     if (authLoading) {
       return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6 pb-28">
           <header className="pt-2">
             <h1 className="text-xl font-bold">Account</h1>
             <p className="text-xs text-zinc-500">Loading...</p>
@@ -1217,7 +1325,7 @@ export default function NextTradeUI() {
       console.log("[v0] Account - not logged in, insideTelegram:", insideTelegram)
 
       return (
-        <div className="space-y-6 pb-20">
+        <div className="space-y-6 pb-28">
           <header className="pt-2">
             <h1 className="text-xl font-bold">Account</h1>
             <p className="text-xs text-zinc-500">
@@ -1283,7 +1391,7 @@ export default function NextTradeUI() {
     }
 
     return (
-      <div className="space-y-6 pb-20">
+      <div className="space-y-6 pb-28">
         <header className="flex justify-between items-center pt-2">
           <div>
             <h1 className="text-xl font-bold">Account</h1>

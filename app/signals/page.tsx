@@ -17,6 +17,22 @@ export default function SignalsPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [selectedTimeframe, setSelectedTimeframe] = useState<string | null>(null)
 
+  // Read URL parameters on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const symbolParam = urlParams.get('symbol')
+      const statusParam = urlParams.get('status')
+      
+      if (symbolParam) {
+        setSelectedSymbol(symbolParam)
+      }
+      if (statusParam === 'active') {
+        setFilter('active')
+      }
+    }
+  }, [])
+
   useEffect(() => {
     const fetchSignals = async () => {
       setLoading(true)

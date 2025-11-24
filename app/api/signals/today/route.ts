@@ -4,27 +4,24 @@ import { getTodaySignals } from "@/lib/supabase/signals"
 
 export async function GET(req: NextRequest) {
   try {
-    // Require authenticated user
+    // Allow both authenticated and unauthenticated users (for free plan visibility)
     const cookieStore = await cookies()
     const userId = cookieStore.get("tg_user_id")?.value
-
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
 
     const searchParams = req.nextUrl.searchParams
     const limit = parseInt(searchParams.get("limit") || "50", 10)
 
     // Use helper function to get today's signals
+    // Return ALL signals - filtering by plan will happen on frontend
     const signals = await getTodaySignals(limit)
 
-    // Filter by symbolId if provided (client-side filter after fetch)
+    // Filter by symbolId if provided
     const symbolId = searchParams.get("symbolId")
     const filteredSignals = symbolId
       ? signals.filter((s) => s.symbol_id === symbolId)
       : signals
 
-    console.log(`[v0] Returning ${filteredSignals.length} signals from database`)
+    console.log(`[v0] Returning ${filteredSignals.length} signals from database (user: ${userId || 'guest'})`)
     
     return NextResponse.json({ signals: filteredSignals }, { 
       headers: {

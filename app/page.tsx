@@ -832,11 +832,26 @@ export default function NextTradeUI() {
                 </div>
               </div>
               
+              {/* Signal Type Badge */}
+              {(signal as any).signal_type && (
+                <Badge variant="outline" className="h-7 px-2.5 text-[10px] border-zinc-700/50 text-zinc-400 bg-zinc-900/80 backdrop-blur-sm uppercase">
+                  {(signal as any).signal_type}
+                </Badge>
+              )}
+
               {signal.timeframe && (
                 <Badge variant="outline" className="h-7 px-2.5 text-[10px] border-zinc-700/50 text-zinc-400 bg-zinc-900/80 backdrop-blur-sm">
                   {signal.timeframe}
                 </Badge>
               )}
+              
+              {/* Quality Tier Badge */}
+              {(signal as any).quality_tier && (
+                <Badge variant="outline" className={`h-7 px-2.5 text-[10px] border-amber-500/30 bg-amber-500/10 text-amber-400 backdrop-blur-sm`}>
+                  TIER {(signal as any).quality_tier}
+                </Badge>
+              )}
+
               {signal.status && signal.status === "active" && (
                 <div className="relative">
                   <div className="absolute inset-0 bg-emerald-500/20 rounded-lg blur-sm animate-pulse" />
@@ -848,7 +863,7 @@ export default function NextTradeUI() {
               )}
             </div>
             <p className="text-xs text-zinc-400 mb-1.5 leading-relaxed">
-              {signal.reason_summary || "AI-powered trading signal"}
+              {(signal as any).explanation || signal.reason_summary || "AI-powered trading signal"}
             </p>
             {timestamp && (
               <p className="text-[10px] text-zinc-600">
@@ -868,19 +883,19 @@ export default function NextTradeUI() {
                 )}
               </>
             )}
-            {signal.signal_score !== null && signal.signal_score !== undefined && (
+            {signal.score !== null && signal.score !== undefined && (
               <div className="mt-1">
                 <p className="text-[10px] text-zinc-500 mb-0.5">Score</p>
                 <p className={`text-xs font-bold ${
-                  signal.signal_score >= 80 
+                  signal.score >= 80 
                     ? "text-emerald-400" 
-                    : signal.signal_score >= 70 
+                    : signal.score >= 70 
                     ? "text-blue-400" 
-                    : signal.signal_score >= 60
+                    : signal.score >= 60
                     ? "text-yellow-400"
                     : "text-rose-400"
                 }`}>
-                  {Math.round(signal.signal_score)}
+                  {Math.round(signal.score)}
                 </p>
               </div>
             )}
@@ -2007,17 +2022,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
                 <span>TP1: {formatNumber(trade.tp1, assetClass === 'forex' ? 5 : 2)}</span>
-                <span>{tpProgress.tp1Progress.toFixed(0)}% • {(() => {
-                  // Calculate pips from entry to TP1 (not current)
-                  const entry = trade.entry_price || 0
-                  const tp1 = trade.tp1 || 0
-                  const direction = trade.direction?.toLowerCase() === 'long' ? 1 : -1
-                  const diff = direction === 1 ? (tp1 - entry) : (entry - tp1)
-                  const entryStr = entry.toString()
-                  const decimalPlaces = entryStr.includes('.') ? entryStr.split('.')[1]?.length || 0 : 0
-                  const pips = decimalPlaces >= 4 ? Math.abs(diff * 10000) : Math.abs(diff)
-                  return assetClass === 'forex' ? `${pips.toFixed(1)} pips` : `${pips.toFixed(2)} pts`
-                })()}</span>
+                <span>{tpProgress.tp1Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp1Pips.toFixed(1)} pips` : `${tpProgress.tp1Pips.toFixed(2)} pts`}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -2033,16 +2038,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
                 <span>TP2: {formatNumber(trade.tp2, assetClass === 'forex' ? 5 : 2)}</span>
-                <span>{tpProgress.tp2Progress.toFixed(0)}% • {(() => {
-                  const entry = trade.entry_price || 0
-                  const tp2 = trade.tp2 || 0
-                  const direction = trade.direction?.toLowerCase() === 'long' ? 1 : -1
-                  const diff = direction === 1 ? (tp2 - entry) : (entry - tp2)
-                  const entryStr = entry.toString()
-                  const decimalPlaces = entryStr.includes('.') ? entryStr.split('.')[1]?.length || 0 : 0
-                  const pips = decimalPlaces >= 4 ? Math.abs(diff * 10000) : Math.abs(diff)
-                  return assetClass === 'forex' ? `${pips.toFixed(1)} pips` : `${pips.toFixed(2)} pts`
-                })()}</span>
+                <span>{tpProgress.tp2Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp2Pips.toFixed(1)} pips` : `${tpProgress.tp2Pips.toFixed(2)} pts`}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -2058,16 +2054,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
                 <span>TP3: {formatNumber(trade.tp3, assetClass === 'forex' ? 5 : 2)}</span>
-                <span>{tpProgress.tp3Progress.toFixed(0)}% • {(() => {
-                  const entry = trade.entry_price || 0
-                  const tp3 = trade.tp3 || 0
-                  const direction = trade.direction?.toLowerCase() === 'long' ? 1 : -1
-                  const diff = direction === 1 ? (tp3 - entry) : (entry - tp3)
-                  const entryStr = entry.toString()
-                  const decimalPlaces = entryStr.includes('.') ? entryStr.split('.')[1]?.length || 0 : 0
-                  const pips = decimalPlaces >= 4 ? Math.abs(diff * 10000) : Math.abs(diff)
-                  return assetClass === 'forex' ? `${pips.toFixed(1)} pips` : `${pips.toFixed(2)} pts`
-                })()}</span>
+                <span>{tpProgress.tp3Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp3Pips.toFixed(1)} pips` : `${tpProgress.tp3Pips.toFixed(2)} pts`}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 

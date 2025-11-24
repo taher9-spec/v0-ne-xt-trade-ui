@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createSupabaseClient } from "@/lib/supabase/client"
 import { getAllSymbols } from "@/lib/supabase/symbols"
-import { fetchFmpDataForSymbol, buildSignalFromFmp } from "@/lib/signals/engine"
+import { buildFactorSnapshot, generateSignal } from "@/lib/signals/engine"
+import { Timeframe, inferSignalType } from "@/lib/signals/config"
 
 /**
- * Cron endpoint to generate trading signals
+ * Cron endpoint to generate trading signals (Engine v2)
  * Protected by ADMIN_SECRET or SIGNAL_ENGINE_SECRET header
  * 
  * Usage:
@@ -39,49 +40,53 @@ export async function GET(req: NextRequest) {
 
     const createdSignals: any[] = []
 
+    // Define timeframes to check - prioritize based on asset class
+    const timeframesToCheck: Timeframe[] = []
+    
     // 2) Process each symbol
     for (const sym of symbols) {
       try {
-        // Determine which timeframes to check based on asset class
-        const timeframesToCheck: Array<"1min" | "5min" | "15min" | "30min" | "1hour" | "4hour" | "1day"> = []
+        // Reset timeframes for each symbol
+        const symbolTimeframes: Timeframe[] = []
         if (sym.asset_class === "crypto" || sym.asset_class === "forex") {
           // Crypto and Forex: check multiple timeframes
-          timeframesToCheck.push("5min", "15min", "1hour", "4hour")
+          symbolTimeframes.push("5m", "15m", "1h", "4h")
         } else {
           // Stocks, indices, commodities: focus on higher timeframes
-          timeframesToCheck.push("1hour", "4hour", "1day")
+          symbolTimeframes.push("1h", "4h", "1d")
         }
 
         // Try each timeframe
-        for (const tf of timeframesToCheck) {
+        for (const tf of symbolTimeframes) {
           try {
-            // 2a) Get data from FMP for this timeframe
-            const marketData = await fetchFmpDataForSymbol(sym.fmp_symbol, tf)
+            // 2a) Build Factor Snapshot
+            const snapshot = await buildFactorSnapshot(sym.fmp_symbol, tf)
 
-            if (!marketData) {
+            if (!snapshot) {
               continue // Try next timeframe
             }
 
-            // 2b) Apply rules → returns null if no setup
-            const draft = buildSignalFromFmp(sym, marketData, tf)
+            // 2b) Generate Signal Candidate
+            const candidate = generateSignal(snapshot)
 
-            if (!draft) {
-              continue // Try next timeframe
+            if (!candidate) {
+              continue // No signal found
             }
 
-            // 2c) Check if there is an active signal for same symbol+timeframe+engine_version
+            // 2c) Check if there is an active signal for same symbol+timeframe+direction
             const { data: existing } = await supabase
               .from("signals")
               .select("id")
               .eq("symbol_id", sym.id)
-              .eq("timeframe", draft.timeframe)
+              .eq("timeframe", tf)
               .eq("status", "active")
-              .eq("engine_version", "v1.0")
+              .eq("direction", candidate.direction)
               .limit(1)
               .maybeSingle()
 
             if (existing) {
-              continue // Signal already exists for this timeframe, try next
+              // TODO: Update existing signal score if better?
+              continue // Signal already exists for this timeframe/direction
             }
 
             // 2d) Insert new signal
@@ -90,21 +95,26 @@ export async function GET(req: NextRequest) {
               .insert({
                 symbol: sym.fmp_symbol, // Keep for backward compatibility
                 symbol_id: sym.id,
-                direction: draft.direction,
-                type: draft.type,
+                direction: candidate.direction,
+                type: inferSignalType(tf),
                 market: sym.asset_class,
-                entry: draft.entry,
-                sl: draft.sl,
-                tp1: draft.tp1,
-                tp2: draft.tp2,
-                tp3: draft.tp3,
-                confidence: draft.confidence,
-                timeframe: draft.timeframe,
+                entry: candidate.entry,
+                sl: candidate.stop,
+                tp1: candidate.target,
+                // tp2, tp3 could be calculated from RR if needed, for now just TP1
+                score: candidate.score,
+                quality_tier: candidate.qualityTier,
+                regime: candidate.regime,
+                factors: candidate.factors,
+                explanation: candidate.explanation,
+                target_price: candidate.target,
+                rr: candidate.rr,
+                confidence: candidate.qualityTier === 'A' ? 5 : candidate.qualityTier === 'B' ? 4 : 3,
+                timeframe: tf,
                 status: "active",
-                rr_ratio: draft.rr_ratio,
-                engine_version: "v1.0",
+                engine_version: "v2.0",
                 activated_at: new Date().toISOString(),
-                reason_summary: draft.reason_summary,
+                reason_summary: candidate.explanation,
               })
               .select()
               .single()
@@ -116,8 +126,10 @@ export async function GET(req: NextRequest) {
 
             if (inserted) {
               createdSignals.push(inserted)
-              console.log(`[cron] ✅ Created ${draft.direction} ${draft.timeframe} signal for ${sym.fmp_symbol}`)
-              break // Found a signal for this symbol, move to next symbol
+              console.log(`[cron] ✅ Created ${candidate.direction} ${tf} signal for ${sym.fmp_symbol} (Score: ${candidate.score})`)
+              // break // Don't break, allow multiple signals per symbol on different timeframes? 
+              // Maybe break to avoid spamming the feed with same symbol? 
+              // Let's allow multiple timeframes for now as they are distinct setups.
             }
           } catch (tfError: any) {
             console.error(`[cron] Error processing ${sym.fmp_symbol} ${tf}:`, tfError)

@@ -5,9 +5,12 @@ import Link from "next/link"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { TrendingUp, TrendingDown, ArrowLeft } from "lucide-react"
+import { TrendingUp, TrendingDown, ArrowLeft, Lock, Crown, Clock } from "lucide-react"
 import type { Signal } from "@/lib/types"
 import { formatNumber, parseNumber } from "@/types/trades"
+import { getSymbolLogo } from "@/lib/utils/symbolLogos"
+import { isSymbolUnlocked, getRequiredPlanForSymbol } from "@/lib/utils/planSymbols"
+import { createSupabaseClient } from "@/lib/supabase/client"
 
 export default function SignalsPage() {
   const [signals, setSignals] = useState<Signal[]>([])

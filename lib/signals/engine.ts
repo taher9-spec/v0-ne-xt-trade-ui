@@ -1,259 +1,149 @@
-import { getFmpHistoricalCandles, getFmpQuote, type FMPQuote } from "../fmp"
-import type { Symbol } from "../symbols"
+/**
+ * Signal Engine Core
+ * Orchestrates data fetching, factor calculation, and signal generation
+ */
 
-export interface MarketData {
-  quote: FMPQuote | null
-  candles: any[]
-  prices: number[]
-  ema50: number | null
-  ema200: number | null
-  rsi: number | null
-  atr: number | null
-  currentPrice: number
-}
-
-export interface SignalDraft {
-  direction: "long" | "short"
-  type: "scalp" | "intraday" | "swing"
-  entry: number
-  sl: number
-  tp1: number
-  tp2: number | null
-  tp3: number | null
-  timeframe: string
-  rr_ratio: number
-  confidence: number
-  reason_summary: string
-}
+import { SymbolConfig, Timeframe, SYMBOLS } from './config'
+import { FactorSnapshot, GeneratedSignalCandidate } from './factors'
+import { detectRegime } from './regime'
+import { scoreLong, scoreShort, calculateTotalScore } from './scoring'
+import { ema, rsi, macd, atr, sma, recentHighLow } from './indicators'
+import { getFmpQuote, getFmpHistoricalCandles } from '../fmp' // Existing helpers
 
 /**
- * Calculate EMA (Exponential Moving Average)
+ * Build a FactorSnapshot from market data
  */
-function calculateEMA(prices: number[], period: number): number | null {
-  if (prices.length < period) return null
-
-  const multiplier = 2 / (period + 1)
-  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period
-
-  for (let i = period; i < prices.length; i++) {
-    ema = (prices[i] - ema) * multiplier + ema
-  }
-
-  return ema
-}
-
-/**
- * Calculate RSI (Relative Strength Index)
- */
-function calculateRSI(prices: number[], period: number = 14): number | null {
-  if (prices.length < period + 1) return null
-
-  let gains = 0
-  let losses = 0
-
-  for (let i = prices.length - period; i < prices.length; i++) {
-    const change = prices[i] - prices[i - 1]
-    if (change > 0) gains += change
-    else losses += Math.abs(change)
-  }
-
-  const avgGain = gains / period
-  const avgLoss = losses / period
-
-  if (avgLoss === 0) return 100
-
-  const rs = avgGain / avgLoss
-  return 100 - 100 / (1 + rs)
-}
-
-/**
- * Calculate ATR (Average True Range)
- */
-function calculateATR(candles: any[], period: number = 14): number | null {
-  if (candles.length < period + 1) return null
-
-  const trueRanges: number[] = []
-
-  for (let i = candles.length - period; i < candles.length; i++) {
-    const high = parseFloat(candles[i].high || candles[i].price || "0")
-    const low = parseFloat(candles[i].low || candles[i].price || "0")
-    const prevClose = i > 0 ? parseFloat(candles[i - 1].close || candles[i - 1].price || "0") : high
-
-    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose))
-    trueRanges.push(tr)
-  }
-
-  return trueRanges.reduce((a, b) => a + b, 0) / trueRanges.length
-}
-
-/**
- * Fetch FMP data for a symbol and build market context
- */
-export async function fetchFmpDataForSymbol(
-  fmpSymbol: string, 
-  timeframe: "1min" | "5min" | "15min" | "30min" | "1hour" | "4hour" | "1day" = "1hour"
-): Promise<MarketData | null> {
+export async function buildFactorSnapshot(symbol: string, timeframe: Timeframe): Promise<FactorSnapshot | null> {
   try {
-    // Fetch quote and candles in parallel
-    const [quote, candles] = await Promise.all([
-      getFmpQuote(fmpSymbol),
-      getFmpHistoricalCandles(fmpSymbol, timeframe, 200),
-    ])
-
-    if (!Array.isArray(candles) || candles.length < 50) {
-      console.log(`[signals/engine] Insufficient candle data for ${fmpSymbol}`)
+    // Map timeframe to FMP format
+    const fmpTf = timeframe === '1h' ? '1hour' : timeframe === '4h' ? '4hour' : timeframe === '1d' ? '1day' : timeframe === '15m' ? '15min' : timeframe === '5m' ? '5min' : timeframe === '1m' ? '1min' : '1hour'
+    
+    // Fetch candles (enough for 200 EMA)
+    const candles = await getFmpHistoricalCandles(symbol, fmpTf as any, 250)
+    if (!candles || candles.length < 200) {
+      console.warn(`[Engine] Insufficient data for ${symbol} ${timeframe}`)
       return null
     }
-
-    // Extract prices from candles
-    const prices = candles
-      .map((c: any) => parseFloat(c.close || c.price || "0"))
-      .filter((p: number) => p > 0 && !isNaN(p))
-      .reverse() // Most recent first
-
-    if (prices.length < 50) {
-      console.log(`[signals/engine] Insufficient price data for ${fmpSymbol}`)
-      return null
-    }
-
-    // Reverse prices for indicator calculation (oldest first)
-    const pricesReversed = [...prices].reverse()
-
-    // Calculate indicators
-    const ema50 = calculateEMA(pricesReversed, 50)
-    const ema200 = calculateEMA(pricesReversed, 200)
-    const currentPrice = prices[0] // Most recent price
-    const rsi = calculateRSI(pricesReversed, 14)
-    const atr = calculateATR(candles, 14)
-
-    if (!ema50 || !ema200 || !currentPrice || !rsi || !atr) {
-      console.log(`[signals/engine] Missing indicators for ${fmpSymbol}`)
-      return null
-    }
-
+    
+    // Parse data (FMP returns newest first, we need oldest first for calc)
+    const sortedCandles = [...candles].reverse() // Now oldest -> newest
+    const closes = sortedCandles.map(c => c.close)
+    const highs = sortedCandles.map(c => c.high)
+    const lows = sortedCandles.map(c => c.low)
+    const volumes = sortedCandles.map(c => c.volume)
+    
+    // Calculate Indicators
+    const ema20 = ema(closes, 20)
+    const ema50 = ema(closes, 50)
+    const ema200 = ema(closes, 200)
+    const rsi14 = rsi(closes, 14)
+    const macdData = macd(closes)
+    const atr14 = atr(highs, lows, closes, 14)
+    const volAvg20 = sma(volumes, 20)
+    const { highs: highs20, lows: lows20 } = recentHighLow(highs, lows, 20)
+    const { highs: highs50, lows: lows50 } = recentHighLow(highs, lows, 50)
+    
+    // Get current values (last index)
+    const idx = closes.length - 1
+    
     return {
-      quote,
-      candles,
-      prices: pricesReversed,
-      ema50,
-      ema200,
-      rsi,
-      atr,
-      currentPrice,
+      symbol,
+      timeframe,
+      now: new Date(),
+      close: closes[idx],
+      ema20: ema20[ema20.length - 1],
+      ema50: ema50[ema50.length - 1],
+      ema200: ema200[ema200.length - 1],
+      rsi14: rsi14[rsi14.length - 1],
+      macdHist: macdData.histogram[macdData.histogram.length - 1],
+      macdHistSlope: macdData.histogram[macdData.histogram.length - 1] - macdData.histogram[macdData.histogram.length - 2],
+      atr: atr14[atr14.length - 1],
+      atrPct: atr14[atr14.length - 1] / closes[idx],
+      volume: volumes[idx],
+      volumeAvg20: volAvg20[volAvg20.length - 1],
+      volumeRatio: volumes[idx] / (volAvg20[volAvg20.length - 1] || 1),
+      high20: highs20[highs20.length - 1],
+      low20: lows20[lows20.length - 1],
+      high50: highs50[highs50.length - 1],
+      low50: lows50[lows50.length - 1]
     }
-  } catch (error: any) {
-    console.error(`[signals/engine] Error fetching data for ${fmpSymbol}:`, error)
+  } catch (error) {
+    console.error(`[Engine] Error building snapshot for ${symbol}:`, error)
     return null
   }
 }
 
 /**
- * Build signal from FMP market data using trading rules
- * Returns null if no signal should be generated
+ * Generate Signal Candidate
  */
-export function buildSignalFromFmp(
-  symbol: Symbol, 
-  marketData: MarketData,
-  timeframe: "1min" | "5min" | "15min" | "30min" | "1hour" | "4hour" | "1day" = "1hour"
-): SignalDraft | null {
-  try {
-    const { ema50, ema200, currentPrice, rsi, atr } = marketData
-
-    if (!ema50 || !ema200 || !currentPrice || !rsi || !atr) {
-      return null
-    }
-
-    // Trading rules
-    const isBullish = ema50 > ema200
-    const isOversold = rsi < 30
-    const isOverbought = rsi > 70
-
-    let direction: "long" | "short" | null = null
-    let entry = currentPrice
-    let sl = 0
-    let tp1 = 0
-    let tp2: number | null = null
-    let tp3: number | null = null
-    let reason = ""
-    let confidence = 3 // Default confidence (1-5 scale)
-
-    // Long signal: bullish trend + oversold bounce
-    if (isBullish && isOversold && rsi > 25) {
-      direction = "long"
-      sl = entry - atr * 1.5
-      const risk = entry - sl
-      tp1 = entry + risk * 2 // 2:1 RR
-      tp2 = entry + risk * 3 // 3:1 RR
-      tp3 = entry + risk * 4 // 4:1 RR
-      const tfLabel = timeframe === "1min" ? "1m" : timeframe === "5min" ? "5m" : timeframe === "15min" ? "15m" : timeframe === "30min" ? "30m" : timeframe === "1hour" ? "1h" : timeframe === "4hour" ? "4h" : "1d"
-      reason = `Bullish EMA stack (50>200) + RSI oversold bounce (${rsi.toFixed(1)}) on ${tfLabel}; ATR-based stop`
-      confidence = rsi < 25 ? 4 : 3
-    }
-    // Short signal: bearish trend + overbought rejection
-    else if (!isBullish && isOverbought && rsi < 75) {
-      direction = "short"
-      sl = entry + atr * 1.5
-      const risk = sl - entry
-      tp1 = entry - risk * 2 // 2:1 RR
-      tp2 = entry - risk * 3 // 3:1 RR
-      tp3 = entry - risk * 4 // 4:1 RR
-      const tfLabel = timeframe === "1min" ? "1m" : timeframe === "5min" ? "5m" : timeframe === "15min" ? "15m" : timeframe === "30min" ? "30m" : timeframe === "1hour" ? "1h" : timeframe === "4hour" ? "4h" : "1d"
-      reason = `Bearish EMA stack (50<200) + RSI overbought rejection (${rsi.toFixed(1)}) on ${tfLabel}; ATR-based stop`
-      confidence = rsi > 75 ? 4 : 3
-    }
-
-    if (!direction) {
-      return null
-    }
-
-    // Calculate RR ratio (based on TP1)
-    const risk = Math.abs(entry - sl)
-    const reward = Math.abs(tp1 - entry)
-    const rrRatio = risk > 0 ? reward / risk : 0
-
-    // Only create signal if RR >= 1.5
-    if (rrRatio < 1.5) {
-      console.log(`[signals/engine] RR ratio too low for ${symbol.fmp_symbol}: ${rrRatio.toFixed(2)}`)
-      return null
-    }
-
-    // Determine signal type based on timeframe and market
-    let type: "scalp" | "intraday" | "swing" = "intraday"
-    if (timeframe === "1min" || timeframe === "5min") {
-      type = "scalp"
-    } else if (timeframe === "15min" || timeframe === "30min" || timeframe === "1hour") {
-      type = "intraday"
-    } else {
-      type = "swing"
-    }
-
-    // Map timeframe to display format
-    const timeframeMap: Record<string, string> = {
-      "1min": "1m",
-      "5min": "5m",
-      "15min": "15m",
-      "30min": "30m",
-      "1hour": "1h",
-      "4hour": "4h",
-      "1day": "1d"
-    }
-
-    return {
-      direction,
-      type,
-      entry,
-      sl,
-      tp1,
-      tp2,
-      tp3,
-      timeframe: timeframeMap[timeframe] || "1h",
-      rr_ratio: rrRatio,
-      confidence,
-      reason_summary: reason,
-    }
-  } catch (error: any) {
-    console.error(`[signals/engine] Error building signal for ${symbol.fmp_symbol}:`, error)
+export function generateSignal(f: FactorSnapshot): GeneratedSignalCandidate | null {
+  const regime = detectRegime(f)
+  
+  // Calculate scores
+  const longScores = scoreLong(f, regime)
+  const shortScores = scoreShort(f, regime)
+  
+  const longTotal = calculateTotalScore(longScores)
+  const shortTotal = calculateTotalScore(shortScores)
+  
+  // Filter Threshold
+  const THRESHOLD = 60
+  
+  let direction: 'LONG' | 'SHORT'
+  let scores
+  let totalScore
+  
+  if (longTotal >= shortTotal) {
+    direction = 'LONG'
+    scores = longScores
+    totalScore = longTotal
+  } else {
+    direction = 'SHORT'
+    scores = shortScores
+    totalScore = shortTotal
+  }
+  
+  if (totalScore < THRESHOLD) return null
+  
+  // Risk Management
+  const atr = f.atr
+  
+  // Safety check: ATR must be positive
+  if (!atr || atr <= 0) {
+    console.warn(`[Engine] Zero/Invalid ATR for ${f.symbol} ${f.timeframe}, skipping signal`)
     return null
   }
-}
 
+  const riskMultiple = regime === 'range' ? 1.5 : 2.0 // Tighter stop in range
+  const rewardMultiple = regime === 'trend' ? 2.5 : 1.5 // Higher target in trend
+  
+  let stop, target
+  if (direction === 'LONG') {
+    stop = f.close - (atr * riskMultiple)
+    target = f.close + (atr * riskMultiple * rewardMultiple)
+  } else {
+    stop = f.close + (atr * riskMultiple)
+    target = f.close - (atr * riskMultiple * rewardMultiple)
+  }
+  
+  // Quality Tier
+  let qualityTier: 'A' | 'B' | 'C' = 'C'
+  if (totalScore >= 80) qualityTier = 'A'
+  else if (totalScore >= 70) qualityTier = 'B'
+  
+  // Explanation
+  const explanation = `${direction} ${regime.toUpperCase()} signal (Score: ${totalScore}). Trend: ${Math.round(scores.trendScore*100)}%, Mom: ${Math.round(scores.momentumScore*100)}%, Vol: ${Math.round(scores.volumeScore*100)}%`
+  
+  return {
+    direction,
+    score: totalScore,
+    qualityTier,
+    entry: f.close,
+    stop,
+    target,
+    rr: rewardMultiple,
+    regime,
+    factors: { ...f, factorScores: scores },
+    explanation
+  }
+}

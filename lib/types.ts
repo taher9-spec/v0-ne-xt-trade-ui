@@ -24,6 +24,11 @@ export type Signal = {
   engine_version?: string | null
   rr_ratio?: number | null
   signal_score?: number | null // Signal quality score 0-100
+  score?: number | null        // Alias for signal_score
+  quality_tier?: string | null // A, B, C
+  regime?: string | null       // trend, range, breakout
+  explanation?: string | null  // Human readable explanation
+  factors?: any | null         // JSON object with factor values
   activated_at?: string | null
   closed_at?: string | null
   created_at: string
@@ -65,6 +70,7 @@ export type Trade = {
     fmp_symbol?: string
     display_symbol?: string
     name?: string
+    asset_class?: string
   } | null
+  signals?: Signal | null
 }
-

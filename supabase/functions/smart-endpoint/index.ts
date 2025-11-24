@@ -2,63 +2,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 import { SYMBOLS, Timeframe, inferSignalType } from './config.ts'
-import { analyzeSymbol } from './engine.ts'
-import { OHLCV } from './indicators.ts'
+import { buildFactorSnapshot, generateSignal } from './engine.ts'
 
-const FMP_API_KEY = Deno.env.get("FMP_API_KEY")
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
-
-/**
- * Helper to fetch OHLCV from FMP
- */
-async function fetchOHLCV(symbol: string, timeframe: Timeframe): Promise<OHLCV[]> {
-  if (!FMP_API_KEY) return []
-  
-  // Map timeframe to FMP format
-  // FMP uses: 1min, 5min, 15min, 30min, 1hour, 4hour
-  // 1d -> daily endpoint
-  let url = ''
-  if (timeframe === '1d') {
-    url = `https://financialmodelingprep.com/api/v3/historical-price-full/${symbol}?apikey=${FMP_API_KEY}&timeseries=250`
-  } else {
-    let tfStr = '1hour'
-    if (timeframe === '1m') tfStr = '1min'
-    if (timeframe === '5m') tfStr = '5min'
-    if (timeframe === '15m') tfStr = '15min'
-    if (timeframe === '4h') tfStr = '4hour'
-    
-    url = `https://financialmodelingprep.com/api/v3/historical-chart/${tfStr}/${symbol}?apikey=${FMP_API_KEY}`
-  }
-  
-  try {
-    const res = await fetch(url)
-    if (!res.ok) {
-      console.error(`FMP error for ${symbol} ${timeframe}: ${res.status}`)
-      return []
-    }
-    
-    const json = await res.json()
-    // FMP returns newest first. We need oldest first for indicator calc.
-    // Also normalize fields (daily has different fields than intraday)
-    const candles = Array.isArray(json.historical) ? json.historical : json // Daily has .historical
-    
-    if (!Array.isArray(candles)) return []
-    
-    return candles.map((c: any) => ({
-      date: c.date,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-      volume: c.volume
-    })).reverse() // Reverse to be chronological (oldest -> newest)
-    
-  } catch (e) {
-    console.error("Fetch error:", e)
-    return []
-  }
-}
 
 Deno.serve(async (req) => {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -86,10 +33,17 @@ Deno.serve(async (req) => {
     
     for (const tf of timeframes) {
       try {
-        const ohlcv = await fetchOHLCV(config.symbol, tf)
-        const signal = analyzeSymbol(config.symbol, tf, ohlcv)
+        const snapshot = await buildFactorSnapshot(config.symbol, tf)
+        if (!snapshot) continue
+        const candidate = generateSignal(snapshot)
+        if (!candidate) continue
         
-        if (signal) {
+        const signal = {
+          ...candidate,
+          symbol: config.symbol,
+          timeframe: tf,
+        }
+
           // Check dedupe: symbol_id, timeframe, direction, status=active
           // We need symbol_id first.
           const { data: symData } = await supabase
@@ -126,18 +80,20 @@ Deno.serve(async (req) => {
             type: inferSignalType(tf),
             market: config.type,
             entry: signal.entry,
-            sl: signal.sl,
-            tp1: signal.tp,
-            target_price: signal.tp,
+            sl: signal.stop,
+            tp1: signal.target,
+            tp2: signal.tp2,
+            tp3: signal.tp3,
+            target_price: signal.target,
             rr: signal.rr,
-            timeframe: signal.timeframe,
+            timeframe: tf,
             status: 'active',
             score: signal.score,
-            quality_tier: signal.tier,
+            quality_tier: signal.qualityTier,
             regime: signal.regime,
             factors: signal.factors,
             explanation: signal.explanation,
-            engine_version: 'v2.0-edge'
+            engine_version: 'v2.1-edge',
           })
           
           if (insErr) errors.push(`Insert error ${config.symbol}: ${insErr.message}`)

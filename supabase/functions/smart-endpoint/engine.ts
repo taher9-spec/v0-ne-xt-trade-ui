@@ -9,6 +9,12 @@ import { detectRegime } from './regime.ts'
 import { scoreLong, scoreShort, calculateTotalScore } from './scoring.ts'
 import { ema, rsi, macd, atr, sma, recentHighLow } from './indicators.ts'
 
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined
+  }
+}
+
 const FMP_API_KEY = Deno.env.get("FMP_API_KEY")
 const FMP_BASE = "https://financialmodelingprep.com/api/v3"
 

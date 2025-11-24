@@ -82,9 +82,20 @@ async function fetchHistoricalCandles(
 
   try {
     // Map our timeframe to FMP format
-    const fmpTimeframe = timeframe === "1day" ? "1day" : timeframe === "1h" ? "1hour" : timeframe === "4h" ? "4hour" : timeframe
+    // FMP supports: 1min, 5min, 15min, 30min, 1hour, 4hour, 1day
+    let fmpTimeframe = timeframe
+    if (timeframe === "1min") fmpTimeframe = "1min"
+    else if (timeframe === "5min") fmpTimeframe = "5min"
+    else if (timeframe === "15min") fmpTimeframe = "15min"
+    else if (timeframe === "1h") fmpTimeframe = "1hour"
+    else if (timeframe === "4h") fmpTimeframe = "4hour"
+    else if (timeframe === "1day") fmpTimeframe = "1day"
+    else {
+      console.error(`[smart-endpoint] Unsupported timeframe: ${timeframe}`)
+      return null
+    }
 
-    const url = `${FMP_BASE}/historical-chart/${fmpTimeframe}/${encodeURIComponent(symbol)}?apikey=${FMP_API_KEY}`
+    const url = `${FMP_BASE}/historical-chart/${fmpTimeframe}/${encodeURIComponent(symbol)}?apikey=${FMP_API_KEY}&limit=${limit}`
     const response = await fetch(url, {
       headers: { "Accept": "application/json" },
     })
@@ -133,6 +144,65 @@ function ema(series: number[], period: number): number[] {
   for (let i = period; i < series.length; i++) {
     const emaValue = (series[i] - result[result.length - 1]) * multiplier + result[result.length - 1]
     result.push(emaValue)
+  }
+
+  return result
+}
+
+/**
+ * Relative Strength Index (RSI) - Wilder's smoothing method
+ */
+function rsi(series: number[], period: number = 14): number[] {
+  if (series.length < period + 1) {
+    return []
+  }
+
+  const changes: number[] = []
+  for (let i = 1; i < series.length; i++) {
+    changes.push(series[i] - series[i - 1])
+  }
+
+  // Calculate initial average gain and loss
+  let avgGain = 0
+  let avgLoss = 0
+
+  for (let i = 0; i < period; i++) {
+    if (changes[i] > 0) {
+      avgGain += changes[i]
+    } else {
+      avgLoss += Math.abs(changes[i])
+    }
+  }
+
+  avgGain /= period
+  avgLoss /= period
+
+  const result: number[] = []
+
+  // First RSI value
+  if (avgLoss === 0) {
+    result.push(100)
+  } else {
+    const rs = avgGain / avgLoss
+    result.push(100 - (100 / (1 + rs)))
+  }
+
+  // Subsequent RSI values using Wilder's smoothing
+  for (let i = period; i < changes.length; i++) {
+    const change = changes[i]
+    const gain = change > 0 ? change : 0
+    const loss = change < 0 ? Math.abs(change) : 0
+
+    // Wilder's smoothing: newAvg = (oldAvg * (period - 1) + newValue) / period
+    avgGain = (avgGain * (period - 1) + gain) / period
+    avgLoss = (avgLoss * (period - 1) + loss) / period
+
+    if (avgLoss === 0) {
+      result.push(100)
+    } else {
+      const rs = avgGain / avgLoss
+      result.push(100 - (100 / (1 + rs)))
+    }
   }
 
   return result
@@ -330,9 +400,9 @@ async function buildSignalFromFmp(
   score: number
   reason: string
 } | null> {
-  // Fetch all required indicators in parallel
-  const [rsiData, ema20Data, ema50Data, ema200Data, candles] = await Promise.all([
-    fetchFmpIndicator(symbol, "rsi", 14, timeframe),
+  // Fetch candles and EMA data in parallel
+  // We'll calculate RSI, MACD, and ATR locally from candles
+  const [ema20Data, ema50Data, ema200Data, candles] = await Promise.all([
     fetchFmpIndicator(symbol, "ema", 20, timeframe),
     fetchFmpIndicator(symbol, "ema", 50, timeframe),
     fetchFmpIndicator(symbol, "ema", 200, timeframe),
@@ -340,10 +410,6 @@ async function buildSignalFromFmp(
   ])
 
   // Validate data
-  if (!rsiData || rsiData.length < 2) {
-    console.error(`[smart-endpoint] Missing RSI data for ${symbol} ${timeframe}`)
-    return null
-  }
   if (!ema20Data || ema20Data.length === 0) {
     console.error(`[smart-endpoint] Missing EMA20 data for ${symbol} ${timeframe}`)
     return null
@@ -356,8 +422,8 @@ async function buildSignalFromFmp(
     console.error(`[smart-endpoint] Missing EMA200 data for ${symbol} ${timeframe}`)
     return null
   }
-  if (!candles || candles.length < 50) {
-    console.error(`[smart-endpoint] Missing candle data for ${symbol} ${timeframe}`)
+  if (!candles || candles.length < 200) {
+    console.error(`[smart-endpoint] Missing or insufficient candle data for ${symbol} ${timeframe} (got ${candles?.length || 0}, need 200)`)
     return null
   }
 
@@ -371,16 +437,25 @@ async function buildSignalFromFmp(
   const ema20Now = parseFloat(ema20Data[ema20Data.length - 1].ema || "0")
   const ema50Now = parseFloat(ema50Data[ema50Data.length - 1].ema || "0")
   const ema200Now = parseFloat(ema200Data[ema200Data.length - 1].ema || "0")
-  const rsiNow = parseFloat(rsiData[rsiData.length - 1].rsi || "0")
-  const rsiPrev = rsiData.length > 1 ? parseFloat(rsiData[rsiData.length - 2].rsi || "0") : rsiNow
 
-  // Calculate MACD from close prices
+  // Extract price arrays for local calculations
   const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
   const highPrices = candles.map((c) => parseFloat(c.high || c.h || "0"))
   const lowPrices = candles.map((c) => parseFloat(c.low || c.l || "0"))
-  const macdData = macd(closePrices, 12, 26, 9)
 
+  // Calculate RSI locally (Wilder's method)
+  const rsiSeries = rsi(closePrices, 14)
+  if (rsiSeries.length < 2) {
+    console.error(`[smart-endpoint] Insufficient data for RSI calculation for ${symbol} ${timeframe}`)
+    return null
+  }
+  const rsiNow = rsiSeries[rsiSeries.length - 1]
+  const rsiPrev = rsiSeries[rsiSeries.length - 2]
+
+  // Calculate MACD from close prices
+  const macdData = macd(closePrices, 12, 26, 9)
   if (macdData.macd.length === 0) {
+    console.error(`[smart-endpoint] Insufficient data for MACD calculation for ${symbol} ${timeframe}`)
     return null
   }
 
@@ -391,6 +466,7 @@ async function buildSignalFromFmp(
   // Calculate ATR
   const atrSeries = atr(highPrices, lowPrices, closePrices, 14)
   if (atrSeries.length === 0) {
+    console.error(`[smart-endpoint] Insufficient data for ATR calculation for ${symbol} ${timeframe}`)
     return null
   }
   const atrNow = atrSeries[atrSeries.length - 1]

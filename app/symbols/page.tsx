@@ -6,7 +6,8 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { TrendingUp, TrendingDown, Coins, DollarSign, BarChart3, Building2, ArrowLeft, Sparkles } from "lucide-react"
+import { TrendingUp, TrendingDown, Coins, DollarSign, BarChart3, Building2, ArrowLeft, Sparkles, Home, BookOpen, Bot, UserIcon } from "lucide-react"
+import Link from "next/link"
 import { createSupabaseClient } from "@/lib/supabase/client"
 import type { Signal } from "@/lib/types"
 
@@ -220,8 +221,8 @@ export default function SymbolsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black text-white p-4 pb-24">
-        <div className="max-w-md mx-auto">
+      <div className="min-h-screen bg-black text-white">
+        <div className="max-w-md mx-auto p-4 pb-24">
           <div className="flex items-center gap-3 mb-6">
             <Button
               variant="ghost"
@@ -247,8 +248,8 @@ export default function SymbolsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 pb-24">
-      <div className="max-w-md mx-auto">
+    <div className="min-h-screen bg-black text-white">
+      <div className="max-w-md mx-auto p-4 pb-24">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <Button
@@ -276,34 +277,36 @@ export default function SymbolsPage() {
         </div>
 
         {/* Asset Class Filters */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-          <button
-            onClick={() => setSelectedAssetClass("all")}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              selectedAssetClass === "all"
-                ? "bg-emerald-500 text-black"
-                : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-            }`}
-          >
-            All
-          </button>
-          {assetClasses.map((ac) => {
-            const Icon = assetClassIcons[ac]
-            return (
-              <button
-                key={ac}
-                onClick={() => setSelectedAssetClass(ac)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
-                  selectedAssetClass === ac
-                    ? "bg-emerald-500 text-black"
-                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {ac.charAt(0).toUpperCase() + ac.slice(1)}
-              </button>
-            )
-          })}
+        <div className="mb-6">
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            <button
+              onClick={() => setSelectedAssetClass("all")}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                selectedAssetClass === "all"
+                  ? "bg-emerald-500 text-black"
+                  : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+              }`}
+            >
+              All
+            </button>
+            {assetClasses.map((ac) => {
+              const Icon = assetClassIcons[ac]
+              return (
+                <button
+                  key={ac}
+                  onClick={() => setSelectedAssetClass(ac)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap flex-shrink-0 ${
+                    selectedAssetClass === ac
+                      ? "bg-emerald-500 text-black"
+                      : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {ac.charAt(0).toUpperCase() + ac.slice(1)}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Symbols List */}
@@ -406,6 +409,36 @@ export default function SymbolsPage() {
           </div>
         )}
       </div>
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-xl border-t border-zinc-800 z-50">
+        <div className="max-w-md mx-auto px-4 py-3">
+          <div className="flex items-center justify-around">
+            <Link href="/" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
+              <Home className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Home</span>
+            </Link>
+            <div className="flex flex-col items-center gap-1 transition-colors text-emerald-400">
+              <Coins className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Symbols</span>
+            </div>
+            <Link href="/?tab=ai" className="flex flex-col items-center -mt-8">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mb-1 bg-zinc-900 border-2 border-zinc-800">
+                <Sparkles className="w-6 h-6 text-zinc-500" />
+              </div>
+              <span className="text-[10px] font-medium text-zinc-500">AI</span>
+            </Link>
+            <Link href="/?tab=journal" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
+              <BookOpen className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Journal</span>
+            </Link>
+            <Link href="/?tab=account" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
+              <UserIcon className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Account</span>
+            </Link>
+          </div>
+        </div>
+      </nav>
     </div>
   )
 }

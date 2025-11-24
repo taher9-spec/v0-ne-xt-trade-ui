@@ -103,20 +103,32 @@ async function countTradesToday(supabase: any, userId: string): Promise<number> 
     const now = new Date()
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0))
     const startOfTodayISO = startOfToday.toISOString()
+    const endOfTodayISO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)).toISOString()
 
-    // Count trades created today
-    const { count, error } = await supabase
+    // Count trades created today (only count trades with opened_at in today's range)
+    const { count, error, data } = await supabase
       .from("trades")
-      .select("*", { count: "exact", head: true })
+      .select("id, opened_at", { count: "exact", head: false })
       .eq("user_id", userId)
       .gte("opened_at", startOfTodayISO)
+      .lte("opened_at", endOfTodayISO)
 
     if (error) {
       console.error("[supabase/quota] Count trades error:", error)
       return 0 // On error, assume 0 (fail open)
     }
 
-    return count || 0
+    const tradeCount = count || 0
+    
+    // Debug logging (only in development or when needed)
+    if (process.env.NODE_ENV === "development" && data) {
+      console.log(`[supabase/quota] User ${userId} has ${tradeCount} trades today (since ${startOfTodayISO})`)
+      if (data.length > 0) {
+        console.log(`[supabase/quota] Trade timestamps:`, data.map((t: any) => t.opened_at))
+      }
+    }
+
+    return tradeCount
   } catch (error: any) {
     console.error("[supabase/quota] countTradesToday error:", error)
     return 0 // On error, assume 0 (fail open)

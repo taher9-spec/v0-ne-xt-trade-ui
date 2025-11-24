@@ -594,6 +594,12 @@ export default function NextTradeUI() {
             return
           }
           
+          if (res.status === 403 && data.error?.includes("limit")) {
+            // Quota exceeded - show helpful message
+            alert(data.error || "Daily signal limit reached. Upgrade your plan for more signals.")
+            return
+          }
+          
           if (res.status === 400 && (
             data.error === "You already took this signal" || 
             data.error?.includes("already") || 
@@ -605,7 +611,7 @@ export default function NextTradeUI() {
 
           // Show clean error message (never expose internal details)
           console.error("[v0] Trade creation failed:", res.status, data.error)
-          alert("Could not save this trade. Please try again.")
+          alert(data.error || "Could not save this trade. Please try again.")
           return
         }
 
@@ -651,33 +657,46 @@ export default function NextTradeUI() {
     const timestamp = signal.activated_at || signal.created_at
 
     return (
-      <Card className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
-        <div className="flex items-start justify-between mb-3">
+      <Card className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors relative overflow-hidden">
+        {/* Symbol logo as subtle background */}
+        <div className="absolute top-0 right-0 w-32 h-32 opacity-5 pointer-events-none">
+          <div className="w-full h-full bg-gradient-to-br from-emerald-500/20 to-rose-500/20 rounded-full blur-3xl" />
+        </div>
+        
+        <div className="flex items-start justify-between mb-3 relative z-10">
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-lg font-bold">{signal.symbol}</h3>
-              <Badge
-                variant="outline"
-                className={`h-5 text-[10px] ${
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <div className="flex items-center gap-2">
+                {/* Symbol logo next to name */}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-zinc-800 to-zinc-900 flex items-center justify-center border border-zinc-700">
+                  <span className="text-xs font-bold text-zinc-300">{signal.symbol.substring(0, 2)}</span>
+                </div>
+                <h3 className="text-lg font-bold">{signal.symbol}</h3>
+              </div>
+              
+              {/* Redesigned LONG/SHORT badge with background and arrow */}
+              <div
+                className={`h-6 px-2.5 rounded-md text-[10px] font-bold flex items-center gap-1 shadow-lg ${
                   direction === "long"
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                    : "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-black shadow-emerald-500/30"
+                    : "bg-gradient-to-r from-rose-500 to-rose-600 text-black shadow-rose-500/30"
                 }`}
               >
                 {direction === "long" ? (
-                  <TrendingUp className="w-3 h-3 mr-1" />
+                  <TrendingUp className="w-3 h-3" />
                 ) : (
-                  <TrendingDown className="w-3 h-3 mr-1" />
+                  <TrendingDown className="w-3 h-3" />
                 )}
                 {direction.toUpperCase()}
-              </Badge>
+              </div>
+              
               {signal.timeframe && (
-                <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
+                <Badge variant="outline" className="h-6 text-[10px] border-zinc-700 text-zinc-400 bg-zinc-900/50">
                   {signal.timeframe}
                 </Badge>
               )}
               {signal.status && signal.status === "active" && (
-                <Badge variant="outline" className="h-5 text-[10px] border-blue-500/30 bg-blue-500/10 text-blue-400">
+                <Badge variant="outline" className="h-6 text-[10px] border-blue-500/30 bg-blue-500/10 text-blue-400">
                   ACTIVE
                 </Badge>
               )}
@@ -691,7 +710,7 @@ export default function NextTradeUI() {
               </p>
             )}
           </div>
-          <div className="text-right ml-3">
+          <div className="text-right ml-3 relative z-10">
             {currentPrice !== null && (
               <>
                 <p className="text-sm font-bold">${formatNumber(currentPrice, 2)}</p>
@@ -704,12 +723,25 @@ export default function NextTradeUI() {
               </>
             )}
             {signal.signal_score !== null && signal.signal_score !== undefined && (
-              <p className="text-[10px] text-zinc-500 mt-1">Score: {Math.round(signal.signal_score)}</p>
+              <div className="mt-1">
+                <p className="text-[10px] text-zinc-500 mb-0.5">Score</p>
+                <p className={`text-xs font-bold ${
+                  signal.signal_score >= 80 
+                    ? "text-emerald-400" 
+                    : signal.signal_score >= 70 
+                    ? "text-blue-400" 
+                    : signal.signal_score >= 60
+                    ? "text-yellow-400"
+                    : "text-rose-400"
+                }`}>
+                  {Math.round(signal.signal_score)}
+                </p>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-3">
+        <div className="grid grid-cols-3 gap-3 mb-3 relative z-10">
           <div className="bg-zinc-900 p-2 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
             <p className="text-sm font-bold">{formatNumber(entry, 2)}</p>
@@ -725,7 +757,7 @@ export default function NextTradeUI() {
         </div>
 
         <Button
-          className={`w-full h-9 text-xs font-semibold ${
+          className={`w-full h-9 text-xs font-semibold relative z-10 ${
             taken ? "bg-zinc-800 text-zinc-400 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-600 text-black"
           }`}
           disabled={taken || loading || checkingTrade}

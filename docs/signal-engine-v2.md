@@ -2,7 +2,9 @@
 
 ## Overview
 
-The signal engine (`smart-endpoint` Edge Function) is a production-grade multi-timeframe, multi-indicator trading signal generator that uses FMP premium technical indicators combined with local calculations.
+The signal engine (`smart-endpoint` Edge Function) is a production-grade multi-timeframe,
+multi-indicator trading signal generator that uses FMP premium technical indicators
+combined with local calculations.
 
 ## Architecture
 
@@ -31,36 +33,36 @@ The signal engine (`smart-endpoint` Edge Function) is a production-grade multi-t
 
 ### From FMP Premium API
 
-1. **RSI (Relative Strength Index)**
+- **RSI (Relative Strength Index)**
 
-   - Period: 14
-   - Endpoint: `/stable/technical-indicators/rsi`
-   - Used for momentum confirmation
+  - Period: 14
+  - Endpoint: `/stable/technical-indicators/rsi`
+  - Used for momentum confirmation
 
-2. **EMA (Exponential Moving Average)**
+- **EMA (Exponential Moving Average)**
 
-   - Periods: 20, 50, 200
-   - Endpoint: `/stable/technical-indicators/ema`
-   - Used for trend bias calculation
+  - Periods: 20, 50, 200
+  - Endpoint: `/stable/technical-indicators/ema`
+  - Used for trend bias calculation
 
 ### Calculated Locally
 
-3. **MACD (Moving Average Convergence Divergence)**
+- **MACD (Moving Average Convergence Divergence)**
 
-   - Fast: 12, Slow: 26, Signal: 9
-   - Calculated from close prices using EMA
-   - Used for momentum and trend confirmation
+  - Fast: 12, Slow: 26, Signal: 9
+  - Calculated from close prices using EMA
+  - Used for momentum and trend confirmation
 
-4. **ATR (Average True Range)**
+- **ATR (Average True Range)**
 
-   - Period: 14
-   - Calculated from OHLC candle data
-   - Used for stop loss and target price calculation
+  - Period: 14
+  - Calculated from OHLC candle data
+  - Used for stop loss and target price calculation
 
-5. **Volume Analysis**
+- **Volume Analysis**
 
-   - 20-period average volume
-   - Used for volume confirmation scoring
+  - 20-period average volume
+  - Used for volume confirmation scoring
 
 ## Signal Scoring System
 
@@ -163,7 +165,8 @@ Signals are scored 0-100 based on multiple factors:
 
 ### Supabase Cron Configuration
 
-Create multiple cron jobs in Supabase Dashboard → Database → Cron Jobs, each calling the same Edge Function with different timeframes:
+Create multiple cron jobs in Supabase Dashboard → Database → Cron Jobs,
+each calling the same Edge Function with different timeframes:
 
 #### 1. Fast Scalps (1min, 5min)
 
@@ -227,12 +230,14 @@ SELECT cron.schedule(
    - **Function**: `smart-endpoint`
    - **HTTP Method**: `POST`
    - **Body**:
+
      ```json
      {
        "source": "cron",
        "timeframes": ["1min", "5min"]
      }
      ```
+
 4. Repeat for other timeframes with appropriate schedules
 
 ### Recommended Schedules
@@ -336,4 +341,3 @@ Adjust these weights based on backtesting results.
 - Lower `SIGNAL_SCORE_THRESHOLD` (e.g., 60) for more signals
 - Adjust scoring weights to be less strict
 - Check if market conditions are unfavorable (low volatility, choppy markets)
-

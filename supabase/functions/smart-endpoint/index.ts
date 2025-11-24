@@ -431,12 +431,25 @@ async function buildSignalFromFmp(
   let ema50Now: number
   let ema200Now: number
 
+  // Require at least 200 candles for reliable indicator calculations
+  // But allow slightly less if we have enough for basic calculations
+  const minCandles = 200
+  if (!candles || candles.length < minCandles) {
+    console.warn(`[smart-endpoint] Insufficient candle data for ${symbol} ${timeframe} (got ${candles?.length || 0}, need ${minCandles})`)
+    // Try with what we have if it's close (e.g., 150+ candles)
+    if (!candles || candles.length < 150) {
+      return null
+    }
+  }
+
+  // At this point, candles is guaranteed to be non-null and have at least 150 candles
+  const closePricesForEma = candles.map((c) => parseFloat(c.close || c.c || "0"))
+
   if (ema20Data && ema20Data.length > 0) {
     ema20Now = parseFloat(ema20Data[ema20Data.length - 1].ema || "0")
   } else {
     // Fallback: calculate EMA20 locally
-    const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
-    const ema20Local = ema(closePrices, 20)
+    const ema20Local = ema(closePricesForEma, 20)
     if (ema20Local.length === 0) {
       console.error(`[smart-endpoint] Cannot calculate EMA20 locally for ${symbol} ${timeframe}`)
       return null
@@ -449,8 +462,7 @@ async function buildSignalFromFmp(
     ema50Now = parseFloat(ema50Data[ema50Data.length - 1].ema || "0")
   } else {
     // Fallback: calculate EMA50 locally
-    const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
-    const ema50Local = ema(closePrices, 50)
+    const ema50Local = ema(closePricesForEma, 50)
     if (ema50Local.length === 0) {
       console.error(`[smart-endpoint] Cannot calculate EMA50 locally for ${symbol} ${timeframe}`)
       return null
@@ -463,24 +475,13 @@ async function buildSignalFromFmp(
     ema200Now = parseFloat(ema200Data[ema200Data.length - 1].ema || "0")
   } else {
     // Fallback: calculate EMA200 locally
-    const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
-    const ema200Local = ema(closePrices, 200)
+    const ema200Local = ema(closePricesForEma, 200)
     if (ema200Local.length === 0) {
       console.error(`[smart-endpoint] Cannot calculate EMA200 locally for ${symbol} ${timeframe}`)
       return null
     }
     ema200Now = ema200Local[ema200Local.length - 1]
     console.warn(`[smart-endpoint] Using local EMA200 calculation for ${symbol} ${timeframe}`)
-  }
-  // Require at least 200 candles for reliable indicator calculations
-  // But allow slightly less if we have enough for basic calculations
-  const minCandles = 200
-  if (!candles || candles.length < minCandles) {
-    console.warn(`[smart-endpoint] Insufficient candle data for ${symbol} ${timeframe} (got ${candles?.length || 0}, need ${minCandles})`)
-    // Try with what we have if it's close (e.g., 150+ candles)
-    if (!candles || candles.length < 150) {
-      return null
-    }
   }
 
   // Get latest values
@@ -492,7 +493,11 @@ async function buildSignalFromFmp(
 
   // EMA values are already calculated above with fallback logic
 
-  // Extract price arrays for local calculations
+  // Extract price arrays for local calculations (candles is guaranteed non-null at this point)
+  if (!candles) {
+    console.error(`[smart-endpoint] Candles is null for ${symbol} ${timeframe}`)
+    return null
+  }
   const closePrices = candles.map((c) => parseFloat(c.close || c.c || "0"))
   const highPrices = candles.map((c) => parseFloat(c.high || c.h || "0"))
   const lowPrices = candles.map((c) => parseFloat(c.low || c.l || "0"))
@@ -526,6 +531,10 @@ async function buildSignalFromFmp(
   const atrNow = atrSeries[atrSeries.length - 1]
 
   // Calculate volume average (last 20 periods)
+  if (!candles) {
+    console.error(`[smart-endpoint] Candles is null when calculating volume for ${symbol} ${timeframe}`)
+    return null
+  }
   const recentVolumes = candles.slice(-20).map((c) => parseFloat(c.volume || c.v || "0"))
   const volumeAvg = recentVolumes.reduce((sum, v) => sum + v, 0) / recentVolumes.length
 

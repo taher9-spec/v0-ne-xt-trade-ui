@@ -131,13 +131,17 @@ export function generateSignal(f: FactorSnapshot): GeneratedSignalCandidate | nu
   const riskMultiple = riskCfg.atrMultipleSL
   const rewardMultiple = riskCfg.rrTarget
   
-  let stop, target
+  let stop, target, tp2, tp3
   if (direction === 'LONG') {
     stop = f.close - (atr * riskMultiple)
-    target = f.close + (atr * riskMultiple * rewardMultiple)
+    target = f.close + (atr * riskMultiple * rewardMultiple) // TP1
+    tp2 = f.close + (atr * riskMultiple * (rewardMultiple + 1)) // TP2 = TP1 + 1R
+    tp3 = f.close + (atr * riskMultiple * (rewardMultiple + 2)) // TP3 = TP1 + 2R
   } else {
     stop = f.close + (atr * riskMultiple)
-    target = f.close - (atr * riskMultiple * rewardMultiple)
+    target = f.close - (atr * riskMultiple * rewardMultiple) // TP1
+    tp2 = f.close - (atr * riskMultiple * (rewardMultiple + 1))
+    tp3 = f.close - (atr * riskMultiple * (rewardMultiple + 2))
   }
   
   let qualityTier: 'A' | 'B' | 'C' = 'C'
@@ -152,7 +156,9 @@ export function generateSignal(f: FactorSnapshot): GeneratedSignalCandidate | nu
     qualityTier,
     entry: f.close,
     stop,
-    target,
+    target, // This maps to tp1
+    tp2,
+    tp3,
     rr: rewardMultiple,
     regime,
     factors: { ...f, factorScores: scores },

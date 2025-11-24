@@ -28,15 +28,11 @@ export const SYMBOLS: SymbolConfig[] = [
   { symbol: 'AUDUSD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'NZDUSD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'USDCAD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'EURGBP', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'GBPCAD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'EURCAD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   
   // Commodities
   { symbol: 'XAUUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'XAGUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'CL', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
-  { symbol: 'WTI', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
+  { symbol: 'CLUSD', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
   
   // Stocks
   { symbol: 'NVDA', type: 'stock', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
@@ -48,7 +44,7 @@ export const SYMBOLS: SymbolConfig[] = [
   // Indices
   { symbol: '^GSPC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
   { symbol: '^DJI', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
-  { symbol: 'SPX', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
+  { symbol: '^IXIC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
 ]
 
 export function inferSignalType(tf: Timeframe): 'scalp' | 'intraday' | 'swing' {
@@ -56,4 +52,3 @@ export function inferSignalType(tf: Timeframe): 'scalp' | 'intraday' | 'swing' {
   if (tf === '15m' || tf === '1h') return 'intraday'
   return 'swing'
 }
-

@@ -39,6 +39,26 @@ export async function buildFactorSnapshot(symbol: string, timeframe: Timeframe):
     const lows = sortedCandles.map((c: any) => c.low)
     const volumes = sortedCandles.map((c: any) => c.volume)
     
+    // VALIDATION: Sanity check price dynamically
+    const currentPrice = closes[closes.length - 1]
+    
+    // Basic zero check
+    if (!currentPrice || currentPrice <= 0) {
+      console.warn(`[Engine] Invalid price for ${symbol}: ${currentPrice}`)
+      return null
+    }
+
+    // Calculate EMA200 for validation
+    const ema200 = ema(closes, 200)
+    const ema200Now = ema200[ema200.length - 1]
+
+    // Dynamic validation: Price shouldn't deviate > 50% from EMA200
+    // This catches bad data (e.g. stock price for crypto) without hardcoded ranges
+    if (ema200Now && Math.abs(currentPrice - ema200Now) / ema200Now > 0.5) {
+      console.warn(`[Engine] Price deviation > 50% from EMA200 for ${symbol}. Price: ${currentPrice}, EMA200: ${ema200Now}. Likely bad data.`)
+      return null
+    }
+
     const ema20 = ema(closes, 20)
     const ema50 = ema(closes, 50)
     const ema200 = ema(closes, 200)
@@ -136,4 +156,3 @@ export function generateSignal(f: FactorSnapshot): GeneratedSignalCandidate | nu
     explanation
   }
 }
-

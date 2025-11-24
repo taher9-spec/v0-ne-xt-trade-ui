@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins, Lock, LogOut, Check, Plus, MessageSquare, Target, AlertCircle, X, Clock, DollarSign, TrendingUp as UpIcon, TrendingDown as DownIcon, Info, AlertTriangle, CheckCircle2 } from "lucide-react"
+import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -673,7 +674,7 @@ export default function NextTradeUI() {
           
           if (res.status === 403 && data.error?.includes("limit")) {
             // Quota exceeded - show helpful message
-            alert(data.error || "Daily signal limit reached. Upgrade your plan for more signals.")
+            toast.error(data.error || "Daily signal limit reached. Upgrade your plan for more signals.")
             return
           }
           
@@ -683,12 +684,13 @@ export default function NextTradeUI() {
             data.error?.includes("duplicate")
           )) {
             setTaken(true)
+            toast.info("You have already added this signal to your journal.")
             return
           }
 
           // Show clean error message (never expose internal details)
           console.error("[v0] Trade creation failed:", res.status, data.error)
-          alert(data.error || "Could not save this trade. Please try again.")
+          toast.error(data.error || "Could not save this trade. Please try again.")
           return
         }
 
@@ -696,6 +698,7 @@ export default function NextTradeUI() {
         if (data.trade) {
           setTaken(true)
           console.log("[v0] Trade created successfully:", data.trade.id)
+          toast.success("Signal added to your Trade Journal!")
           
           // Force refresh trades list to update Journal immediately
           // Use a small delay to ensure database write is complete
@@ -724,7 +727,7 @@ export default function NextTradeUI() {
       } catch (e: any) {
         // Log error but show clean message to user
         console.error("[v0] Trade creation exception:", e)
-        alert("Could not save this trade. Please try again.")
+        toast.error("Could not save this trade. Please try again.")
       } finally {
         setLoading(false)
       }
@@ -1804,6 +1807,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const [showNotes, setShowNotes] = useState(false)
   const [notes, setNotes] = useState(trade.notes || "")
   const [savingNotes, setSavingNotes] = useState(false)
+  const lastAdviceRef = useRef<string | null>(null)
   
   // Extract signal data - ONLY use real data from database, NO defaults
   const signal = trade.signals || {}

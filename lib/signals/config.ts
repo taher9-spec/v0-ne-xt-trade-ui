@@ -8,7 +8,7 @@ export type InstrumentType = 'crypto' | 'forex' | 'index' | 'stock' | 'commodity
 export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d'
 
 export interface SymbolConfig {
-  symbol: string            // e.g. 'BTCUSD', 'XAUUSD', 'NVDA'
+  symbol: string            // FMP Ticker
   type: InstrumentType
   enabledTimeframes: Timeframe[]
 }
@@ -29,15 +29,11 @@ export const SYMBOLS: SymbolConfig[] = [
   { symbol: 'AUDUSD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'NZDUSD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'USDCAD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'EURGBP', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'GBPCAD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'EURCAD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   
   // Commodities
-  { symbol: 'XAUUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'XAGUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
-  { symbol: 'CL', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
-  { symbol: 'WTI', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
+  { symbol: 'XAUUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] }, // Gold
+  { symbol: 'XAGUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] }, // Silver
+  { symbol: 'CLUSD', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] }, // Crude Oil
   
   // Stocks - Tech
   { symbol: 'NVDA', type: 'stock', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
@@ -47,9 +43,9 @@ export const SYMBOLS: SymbolConfig[] = [
   { symbol: 'TSLA', type: 'stock', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
   
   // Indices
-  { symbol: '^GSPC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
-  { symbol: '^DJI', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
-  { symbol: 'SPX', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
+  { symbol: '^GSPC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] }, // S&P 500
+  { symbol: '^DJI', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },  // Dow Jones
+  { symbol: '^IXIC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] }, // Nasdaq
 ]
 
 /**
@@ -75,4 +71,3 @@ export function getTimeframesForSymbol(symbol: string): Timeframe[] {
   const config = SYMBOLS.find(s => s.symbol === symbol)
   return config?.enabledTimeframes || []
 }
-

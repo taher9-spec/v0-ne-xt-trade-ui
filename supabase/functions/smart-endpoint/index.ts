@@ -1,8 +1,21 @@
 // smart-endpoint/index.ts
 // Multi-timeframe, multi-indicator signal engine v2
 // Uses FMP premium technical indicators + local calculations
+// @deno-types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts"
+/// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+// @ts-ignore - JSR imports work at runtime in Deno
 import { createClient } from "jsr:@supabase/supabase-js@2"
+
+// Type declarations for Deno global (for IDE type checking)
+declare global {
+  const Deno: {
+    env: {
+      get(key: string): string | undefined
+    }
+    serve(handler: (req: Request) => Response | Promise<Response>): void
+  }
+}
 
 const FMP_API_KEY = Deno.env.get("FMP_API_KEY")
 const FMP_BASE = "https://financialmodelingprep.com/api/v3"
@@ -642,7 +655,7 @@ async function buildSignalFromFmp(
 // Main Edge Function Handler
 // ============================================================================
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(
       JSON.stringify({ error: "Missing Supabase configuration" }),

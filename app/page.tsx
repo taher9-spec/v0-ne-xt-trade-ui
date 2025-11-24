@@ -640,15 +640,21 @@ export default function NextTradeUI() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {trades.map((trade) => {
+            {trades.map((trade: any) => {
+              // Extract signal data (joined from signals table)
+              const signal = trade.signals || {}
+              const timeframe = signal.timeframe || trade.timeframe || "N/A"
+              const stopLoss = trade.sl || signal.sl || null
+              const targetPrice = trade.tp1 || signal.tp1 || null
+              
               // Determine if TP1 or SL was hit
               const isTpHit = trade.status === "tp_hit"
               const isSlHit = trade.status === "sl_hit"
               const closePrice = trade.close_price || trade.exit_price
               const closedAt = trade.closed_at
 
-              // Format close time
-              const formatCloseTime = (dateString: string | null | undefined) => {
+              // Format date nicely
+              const formatDate = (dateString: string | null | undefined) => {
                 if (!dateString) return ""
                 try {
                   const date = new Date(dateString)
@@ -662,94 +668,100 @@ export default function NextTradeUI() {
                   if (diffMins < 60) return `${diffMins}m ago`
                   if (diffHours < 24) return `${diffHours}h ago`
                   if (diffDays < 7) return `${diffDays}d ago`
-                  return date.toLocaleDateString()
+                  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                 } catch {
                   return ""
                 }
               }
 
+              // Get current R and % (for open trades use floating, for closed use result)
+              const currentR = trade.status === "open" ? (trade.floating_r ?? 0) : (trade.result_r ?? 0)
+              const currentPercent = trade.status === "open" ? (trade.floating_pnl_percent ?? 0) : (trade.pnl_percent ?? 0)
+
               return (
                 <Card key={trade.id} className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-base font-bold">{trade.symbol}</h3>
-                        <Badge
-                          variant="outline"
-                          className={`h-5 text-[10px] ${
-                            trade.direction === "long"
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                              : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                          }`}
-                        >
-                          {trade.direction.toUpperCase()}
-                        </Badge>
-                        <Badge
-                          variant="outline"
-                          className={`h-5 text-[10px] ${
-                            trade.status === "open"
-                              ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
-                              : isTpHit
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                              : isSlHit
-                              ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                              : "border-zinc-700 text-zinc-400"
-                          }`}
-                        >
-                          {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
-                        </Badge>
+                  {/* Header row: symbol + direction pill + timeframe + status pill */}
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <h3 className="text-lg font-bold">{trade.symbol}</h3>
+                    <Badge
+                      variant="outline"
+                      className={`h-5 text-[10px] ${
+                        trade.direction === "long"
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                          : "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                      }`}
+                    >
+                      {trade.direction === "long" ? "LONG" : "SHORT"}
+                    </Badge>
+                    {timeframe && timeframe !== "N/A" && (
+                      <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
+                        {timeframe}
+                      </Badge>
+                    )}
+                    <Badge
+                      variant="outline"
+                      className={`h-5 text-[10px] ${
+                        trade.status === "open"
+                          ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
+                          : isTpHit
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                          : isSlHit
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                          : "border-zinc-700 text-zinc-400"
+                      }`}
+                    >
+                      {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
+                    </Badge>
+                  </div>
+
+                  {/* Middle section: Entry/Stop Loss/Target on left, R/% on right */}
+                  <div className="grid grid-cols-2 gap-4 mb-3">
+                    {/* Left block: Entry, Stop Loss, Target */}
+                    <div className="space-y-2">
+                      <div className="bg-zinc-900 p-2 rounded-lg">
+                        <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
+                        <p className="text-sm font-bold">{formatNumber(trade.entry_price, 2, "N/A")}</p>
                       </div>
-                      <p className="text-xs text-zinc-500 mb-1">
-                        Entry: {formatNumber(trade.entry_price, 2, "N/A")}
-                        {closePrice !== null && closePrice !== undefined && ` • Close: ${formatNumber(closePrice, 2)}`}
-                      </p>
-                      {/* Show TP/SL hit information */}
-                      {isTpHit && closePrice && (
-                        <p className="text-xs text-emerald-400 font-medium">
-                          ✅ TP1 hit at {formatNumber(closePrice, 2)} • {formatCloseTime(closedAt)}
+                      <div className="bg-zinc-900 p-2 rounded-lg">
+                        <p className="text-[10px] text-zinc-500 mb-0.5">Stop Loss</p>
+                        <p className="text-sm font-bold text-rose-400">{formatNumber(stopLoss, 2, "N/A")}</p>
+                      </div>
+                      <div className="bg-zinc-900 p-2 rounded-lg">
+                        <p className="text-[10px] text-zinc-500 mb-0.5">Target</p>
+                        <p className="text-sm font-bold text-emerald-400">{formatNumber(targetPrice, 2, "N/A")}</p>
+                      </div>
+                    </div>
+
+                    {/* Right block: Current R and Current %} */}
+                    <div className={`flex flex-col justify-center items-end ${currentR >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      <div className="mb-2">
+                        <p className="text-[10px] text-zinc-500 mb-0.5 text-right">Current R</p>
+                        <p className="text-2xl font-bold">
+                          {currentR > 0 ? "+" : ""}
+                          {formatNumber(currentR, 2, "0.00")}R
                         </p>
-                      )}
-                      {isSlHit && closePrice && (
-                        <p className="text-xs text-rose-400 font-medium">
-                          ❌ SL hit at {formatNumber(closePrice, 2)} • {formatCloseTime(closedAt)}
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-zinc-500 mb-0.5 text-right">Current %</p>
+                        <p className="text-xl font-semibold">
+                          {currentPercent > 0 ? "+" : ""}
+                          {formatNumber(currentPercent, 2, "0.00")}%
                         </p>
+                      </div>
+                      {trade.status === "open" && trade.current_price && (
+                        <p className="text-[10px] text-zinc-500 mt-2">${formatNumber(trade.current_price, 2)}</p>
                       )}
                     </div>
-                    <div className={`text-right ml-3 ${(trade.result_r ?? trade.floating_r ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      {trade.status === "open" && trade.floating_r !== null && trade.floating_r !== undefined ? (
-                        <>
-                          <p className="text-lg font-bold">
-                            {trade.floating_r > 0 ? "+" : ""}
-                            {formatNumber(trade.floating_r, 2)}R
-                          </p>
-                          {trade.floating_pnl_percent !== null && trade.floating_pnl_percent !== undefined && (
-                            <p className="text-sm font-semibold">
-                              {trade.floating_pnl_percent > 0 ? "+" : ""}
-                              {formatNumber(trade.floating_pnl_percent, 2)}%
-                            </p>
-                          )}
-                          {trade.current_price !== null && trade.current_price !== undefined && (
-                            <p className="text-[10px] text-zinc-500 mt-1">${formatNumber(trade.current_price, 2)}</p>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-lg font-bold">
-                            {trade.result_r !== null && trade.result_r !== undefined && trade.result_r > 0 ? "+" : ""}
-                            {formatNumber(trade.result_r, 2, "0.00")}R
-                          </p>
-                          {trade.pnl_percent !== null && trade.pnl_percent !== undefined && (
-                            <p className="text-sm font-semibold">
-                              {trade.pnl_percent > 0 ? "+" : ""}
-                              {formatNumber(trade.pnl_percent, 2)}%
-                            </p>
-                          )}
-                          {trade.pnl !== null && trade.pnl !== undefined && (
-                            <p className="text-xs text-zinc-400">${formatNumber(trade.pnl, 2)}</p>
-                          )}
-                        </>
-                      )}
-                    </div>
+                  </div>
+
+                  {/* Bottom row: Opened date and Closed info */}
+                  <div className="flex items-center justify-between text-xs text-zinc-500 pt-2 border-t border-zinc-800">
+                    <span>Opened {formatDate(trade.opened_at)}</span>
+                    {trade.status !== "open" && closePrice !== null && closePrice !== undefined && (
+                      <span className="text-zinc-400">
+                        Closed at {formatNumber(closePrice, 2)}
+                      </span>
+                    )}
                   </div>
                 </Card>
               )

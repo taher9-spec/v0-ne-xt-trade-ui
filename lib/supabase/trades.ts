@@ -19,10 +19,35 @@ export async function getUserTrades(userId: string, limit: number = 50): Promise
   try {
     const supabase = createSupabaseClient()
 
-    // Fetch trades for user
+    // Fetch trades for user with signal join
+    // Select specific fields from trades and signals as requested
     const { data: trades, error } = await supabase
       .from("trades")
-      .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name)")
+      .select(`
+        id,
+        symbol,
+        direction,
+        entry_price,
+        exit_price,
+        result_r,
+        pnl,
+        status,
+        opened_at,
+        closed_at,
+        close_price,
+        sl,
+        tp1,
+        tp2,
+        tp3,
+        symbol_id,
+        signal_id,
+        symbols(fmp_symbol, display_symbol, name),
+        signals(
+          timeframe,
+          sl,
+          tp1
+        )
+      `)
       .eq("user_id", userId)
       .order("opened_at", { ascending: false })
       .limit(limit)

@@ -1,8 +1,6 @@
 // smart-endpoint/index.ts
 // Multi-timeframe, multi-indicator signal engine v2
 // Uses FMP premium technical indicators + local calculations
-// @deno-types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts"
-/// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 // @ts-ignore - JSR imports work at runtime in Deno
 import { createClient } from "jsr:@supabase/supabase-js@2"

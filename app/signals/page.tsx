@@ -15,16 +15,20 @@ export default function SignalsPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<"all" | "active" | "history">("all")
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchSignals = async () => {
       setLoading(true)
       try {
-        // Build URL with status filter and symbol filter
+        // Build URL with status filter, symbol filter, and timeframe filter
         const statusParam = filter === "all" ? "all" : filter === "active" ? "active" : "history"
         let url = `/api/signals/all?status=${statusParam}`
         if (selectedSymbol) {
           url += `&symbol=${encodeURIComponent(selectedSymbol)}`
+        }
+        if (selectedTimeframe) {
+          url += `&timeframe=${encodeURIComponent(selectedTimeframe)}`
         }
         const res = await fetch(url, { cache: "no-store" })
         if (!res.ok) {
@@ -43,7 +47,7 @@ export default function SignalsPage() {
       }
     }
     fetchSignals()
-  }, [filter, selectedSymbol]) // Re-fetch when filter or symbol changes
+  }, [filter, selectedSymbol, selectedTimeframe]) // Re-fetch when filter, symbol, or timeframe changes
 
   // Fetch symbols from database
   useEffect(() => {
@@ -125,6 +129,20 @@ export default function SignalsPage() {
               History
             </Button>
           </div>
+
+          <select
+            value={selectedTimeframe || ""}
+            onChange={(e) => setSelectedTimeframe(e.target.value || null)}
+            className="h-8 px-3 text-xs bg-zinc-950 border border-zinc-800 rounded-md text-white"
+          >
+            <option value="">All Timeframes</option>
+            <option value="1min">1m</option>
+            <option value="5min">5m</option>
+            <option value="15min">15m</option>
+            <option value="1h">1h</option>
+            <option value="4h">4h</option>
+            <option value="1day">1D</option>
+          </select>
 
           {symbols.length > 0 && (
             <select

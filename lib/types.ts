@@ -6,13 +6,15 @@ export type Signal = {
   id: string
   symbol: string
   symbol_id?: string | null
-  direction: "long" | "short"
+  direction: "long" | "short" | "LONG" | "SHORT"
   type: "intraday" | "swing" | "scalp" | string
   market: "forex" | "crypto" | "stock" | string
   entry?: number | null
   entry_price?: number | null // Some code uses entry_price, some uses entry
   sl?: number | null
+  stop_loss?: number | null // Alternative name
   tp1?: number | null
+  target_price?: number | null // Alternative name
   tp2?: number | null
   tp3?: number | null
   timeframe?: string | null
@@ -21,6 +23,7 @@ export type Signal = {
   confidence?: number | null
   engine_version?: string | null
   rr_ratio?: number | null
+  signal_score?: number | null // Signal quality score 0-100
   activated_at?: string | null
   closed_at?: string | null
   created_at: string

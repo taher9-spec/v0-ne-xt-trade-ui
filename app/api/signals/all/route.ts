@@ -22,11 +22,13 @@ export async function GET(req: NextRequest) {
     const offset = parseInt(searchParams.get("offset") || "0", 10)
     const statusFilter = (searchParams.get("status") || "all") as "all" | "active" | "history"
     const symbolFilter = searchParams.get("symbol") || undefined
+    const timeframeFilter = searchParams.get("timeframe") || undefined
 
     // Use helper function to get all signals with filters
     const signals = await getAllSignals({
       symbol: symbolFilter,
       status: statusFilter,
+      timeframe: timeframeFilter,
       limit,
       offset,
     })

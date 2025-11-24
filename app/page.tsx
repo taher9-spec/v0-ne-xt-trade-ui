@@ -363,9 +363,11 @@ export default function NextTradeUI() {
             {signals.length > 0 ? `Today's Signals: ${signals.length} active` : "Today's Signals"}
           </h2>
           {signals.length > 0 && (
-            <Badge variant="outline" className="border-zinc-700 text-zinc-400">
-              {loadingSignals ? "..." : signals.length} active
-            </Badge>
+            <Link href="/signals?status=active">
+              <Badge variant="outline" className="border-zinc-700 text-zinc-400 cursor-pointer hover:border-zinc-600 transition-colors">
+                {loadingSignals ? "..." : signals.length} active
+              </Badge>
+            </Link>
           )}
         </div>
 
@@ -396,6 +398,8 @@ export default function NextTradeUI() {
     const [taken, setTaken] = useState(false)
     const [loading, setLoading] = useState(false)
     const [checkingTrade, setCheckingTrade] = useState(true)
+    const [currentPrice, setCurrentPrice] = useState<number | null>(null)
+    const [priceChange, setPriceChange] = useState<number | null>(null)
 
     // Check if user already has a trade for this signal (prevent duplicates)
     useEffect(() => {
@@ -446,6 +450,63 @@ export default function NextTradeUI() {
 
       checkExistingTrade()
     }, [user, signal.id, trades.length]) // Include trades.length to re-check when trades update
+
+    // Fetch current price for the signal
+    useEffect(() => {
+      const fmpSymbol = signal.symbols?.fmp_symbol || signal.symbol
+      if (!fmpSymbol) return
+
+      const fetchPrice = async () => {
+        try {
+          const res = await fetch(`/api/quote?symbol=${encodeURIComponent(fmpSymbol)}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data.price) {
+              const price = parseFloat(String(data.price))
+              setCurrentPrice(price)
+              
+              // Calculate % change from entry
+              const entry = signal.entry || signal.entry_price
+              if (entry && entry > 0) {
+                const change = ((price - entry) / entry) * 100
+                setPriceChange(change)
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[v0] Failed to fetch current price:", e)
+        }
+      }
+
+      fetchPrice()
+      // Refresh price every 30 seconds
+      const interval = setInterval(fetchPrice, 30000)
+      return () => clearInterval(interval)
+    }, [signal.symbol, signal.symbols?.fmp_symbol, signal.entry, signal.entry_price])
+
+    // Format relative time
+    const formatRelativeTime = (dateString: string | null | undefined) => {
+      if (!dateString) return ""
+      try {
+        const date = new Date(dateString)
+        const now = new Date()
+        const diffMs = now.getTime() - date.getTime()
+        const diffMins = Math.floor(diffMs / 60000)
+        const diffHours = Math.floor(diffMs / 3600000)
+        const diffDays = Math.floor(diffMs / 86400000)
+
+        if (diffMins < 1) return "Just now"
+        if (diffMins < 60) return `${diffMins}m ago`
+        if (diffHours < 24) return `${diffHours}h ago`
+        if (diffDays < 7) return `${diffDays}d ago`
+        return date.toLocaleDateString()
+      } catch {
+        return ""
+      }
+    }
 
     const handleTakeSignal = async () => {
       if (!user) {
@@ -524,62 +585,83 @@ export default function NextTradeUI() {
       }
     }
 
+    const entry = signal.entry || signal.entry_price || 0
+    const stopLoss = signal.sl || signal.stop_loss || 0
+    const target = signal.tp1 || signal.target_price || null
+    const direction = (signal.direction || "").toLowerCase()
+    const timestamp = signal.activated_at || signal.created_at
+
     return (
       <Card className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
         <div className="flex items-start justify-between mb-3">
-          <div>
+          <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-lg font-bold">{signal.symbol}</h3>
               <Badge
                 variant="outline"
                 className={`h-5 text-[10px] ${
-                  signal.direction === "long"
+                  direction === "long"
                     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
                     : "border-rose-500/30 bg-rose-500/10 text-rose-400"
                 }`}
               >
-                {signal.direction === "long" ? (
+                {direction === "long" ? (
                   <TrendingUp className="w-3 h-3 mr-1" />
                 ) : (
                   <TrendingDown className="w-3 h-3 mr-1" />
                 )}
-                {signal.direction.toUpperCase()}
-              </Badge>
-              <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
-                {signal.type}
+                {direction.toUpperCase()}
               </Badge>
               {signal.timeframe && (
                 <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
                   {signal.timeframe}
                 </Badge>
               )}
-            </div>
-            <p className="text-xs text-zinc-500">
-              {signal.reason_summary || "AI-powered signal"}
-              {signal.engine_version && (
-                <span className="ml-2 text-zinc-600">• Engine {signal.engine_version}</span>
+              {signal.status && signal.status === "active" && (
+                <Badge variant="outline" className="h-5 text-[10px] border-blue-500/30 bg-blue-500/10 text-blue-400">
+                  ACTIVE
+                </Badge>
               )}
+            </div>
+            <p className="text-xs text-zinc-500 mb-1">
+              {signal.reason_summary || "AI-powered signal"}
             </p>
+            {timestamp && (
+              <p className="text-[10px] text-zinc-600">
+                Published {formatRelativeTime(timestamp)}
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-1">
-            {Array.from({ length: signal.confidence }).map((_, i) => (
-              <div key={i} className="w-1 h-1 bg-emerald-500 rounded-full" />
-            ))}
+          <div className="text-right ml-3">
+            {currentPrice !== null && (
+              <>
+                <p className="text-sm font-bold">${formatNumber(currentPrice, 2)}</p>
+                {priceChange !== null && (
+                  <p className={`text-xs font-semibold ${priceChange >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                    {priceChange >= 0 ? "+" : ""}
+                    {formatNumber(priceChange, 2)}%
+                  </p>
+                )}
+              </>
+            )}
+            {signal.signal_score !== null && signal.signal_score !== undefined && (
+              <p className="text-[10px] text-zinc-500 mt-1">Score: {Math.round(signal.signal_score)}</p>
+            )}
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div className="bg-zinc-900 p-2 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
-            <p className="text-sm font-bold">{formatNumber(signal.entry)}</p>
+            <p className="text-sm font-bold">{formatNumber(entry, 2)}</p>
           </div>
           <div className="bg-zinc-900 p-2 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-0.5">Stop Loss</p>
-            <p className="text-sm font-bold text-rose-400">{formatNumber(signal.sl)}</p>
+            <p className="text-sm font-bold text-rose-400">{formatNumber(stopLoss, 2)}</p>
           </div>
           <div className="bg-zinc-900 p-2 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-0.5">Target</p>
-            <p className="text-sm font-bold text-emerald-400">{signal.tp1 !== null && signal.tp1 !== undefined ? formatNumber(signal.tp1) : "TBD"}</p>
+            <p className="text-sm font-bold text-emerald-400">{target !== null && target !== undefined ? formatNumber(target, 2) : "TBD"}</p>
           </div>
         </div>
 

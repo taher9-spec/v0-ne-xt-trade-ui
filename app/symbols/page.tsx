@@ -546,33 +546,3 @@ function SymbolCard({
     </Card>
   )
 }
-        <div className="max-w-md mx-auto px-4 py-3">
-          <div className="flex items-center justify-around">
-            <Link href="/" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
-              <Home className="w-5 h-5" />
-              <span className="text-[10px] font-medium">Home</span>
-            </Link>
-            <div className="flex flex-col items-center gap-1 transition-colors text-emerald-400">
-              <Coins className="w-5 h-5" />
-              <span className="text-[10px] font-medium">Symbols</span>
-            </div>
-            <Link href="/?tab=ai" className="flex flex-col items-center -mt-8">
-              <div className="w-14 h-14 rounded-full flex items-center justify-center mb-1 bg-zinc-900 border-2 border-zinc-800">
-                <Sparkles className="w-6 h-6 text-zinc-500" />
-              </div>
-              <span className="text-[10px] font-medium text-zinc-500">AI</span>
-            </Link>
-            <Link href="/?tab=journal" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
-              <BookOpen className="w-5 h-5" />
-              <span className="text-[10px] font-medium">Journal</span>
-            </Link>
-            <Link href="/?tab=account" className="flex flex-col items-center gap-1 transition-colors text-zinc-500 hover:text-emerald-400">
-              <UserIcon className="w-5 h-5" />
-              <span className="text-[10px] font-medium">Account</span>
-            </Link>
-          </div>
-        </div>
-      </nav>
-    </div>
-  )
-}

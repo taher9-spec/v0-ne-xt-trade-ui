@@ -1790,17 +1790,17 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const [notes, setNotes] = useState(trade.notes || "")
   const [savingNotes, setSavingNotes] = useState(false)
   
-  // Extract signal data
+  // Extract signal data - ONLY use real data from database, NO defaults
   const signal = trade.signals || {}
-  const timeframe = signal.timeframe || trade.timeframe || "N/A"
-  const stopLoss = trade.sl || signal.sl || null
-  const targetPrice = trade.tp1 || signal.tp1 || null
+  const timeframe = trade.timeframe || signal.timeframe || null
+  const stopLoss = trade.sl || null
+  const targetPrice = trade.tp1 || null
   
-  // Determine if TP1 or SL was hit
-  const isTpHit = trade.status === "tp_hit"
-  const isSlHit = trade.status === "sl_hit"
-  const closePrice = trade.close_price || trade.exit_price
-  const closedAt = trade.closed_at
+  // Determine if TP1 or SL was hit - ONLY if status is actually tp_hit/sl_hit AND has close data
+  const isTpHit = trade.status === "tp_hit" && trade.closed_at && trade.close_price
+  const isSlHit = trade.status === "sl_hit" && trade.closed_at && trade.close_price
+  const closePrice = trade.close_price || null
+  const closedAt = trade.closed_at || null
 
   // Format date nicely
   const formatDate = (dateString: string | null | undefined) => {
@@ -1827,9 +1827,9 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const currentR = trade.status === "open" ? (trade.floating_r ?? 0) : (trade.result_r ?? 0)
   const currentPercent = trade.status === "open" ? (trade.floating_pnl_percent ?? 0) : (trade.pnl_percent ?? 0)
   
-  // Calculate TP progress for open trades
-  const currentPrice = trade.status === "open" ? (trade.current_price || trade.entry_price || 0) : (trade.close_price || trade.entry_price || 0)
-  const tpProgress = trade.status === "open" ? calculateTPProgress(trade, currentPrice) : null
+  // Calculate TP progress for open trades ONLY - use real current price, NO defaults
+  const currentPrice = trade.status === "open" && trade.current_price && trade.current_price > 0 ? trade.current_price : null
+  const tpProgress = trade.status === "open" && currentPrice && currentPrice > 0 ? calculateTPProgress(trade, currentPrice) : null
   const tradeAdvice = trade.status === "open" && tpProgress ? getTradeAdvice(trade, tpProgress) : null
   const liquidationMsg = getLiquidationMessage(trade)
 
@@ -1949,15 +1949,6 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
         }`}>
           {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
         </div>
-        {/* TP Hit Info - Show timestamp and price if TP was hit */}
-        {isTpHit && closedAt && closePrice && (
-          <div className="flex items-center gap-1.5 text-xs text-emerald-400 ml-auto">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Hit at {new Date(closedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
-            <DollarSign className="w-3 h-3" />
-            <span>{formatNumber(closePrice, assetClass === 'forex' ? 5 : 2)}</span>
-          </div>
-        )}
         {/* SL Hit Info */}
         {isSlHit && closedAt && closePrice && (
           <div className="flex items-center gap-1.5 text-xs text-rose-400 ml-auto">
@@ -2009,14 +2000,24 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
         </div>
       </div>
 
-      {/* TP Progress for open trades */}
-      {trade.status === "open" && tpProgress && (
+      {/* TP Progress for open trades ONLY - Show ALL targets */}
+      {trade.status === "open" && tpProgress && currentPrice > 0 && (
         <div className="mb-3 space-y-2 relative z-10">
           {trade.tp1 && (
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-                <span>TP1</span>
-                <span>{tpProgress.tp1Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp1Pips.toFixed(1)} pips` : `${tpProgress.tp1Pips.toFixed(2)} pts`}</span>
+                <span>TP1: {formatNumber(trade.tp1, assetClass === 'forex' ? 5 : 2)}</span>
+                <span>{tpProgress.tp1Progress.toFixed(0)}% • {(() => {
+                  // Calculate pips from entry to TP1 (not current)
+                  const entry = trade.entry_price || 0
+                  const tp1 = trade.tp1 || 0
+                  const direction = trade.direction?.toLowerCase() === 'long' ? 1 : -1
+                  const diff = direction === 1 ? (tp1 - entry) : (entry - tp1)
+                  const entryStr = entry.toString()
+                  const decimalPlaces = entryStr.includes('.') ? entryStr.split('.')[1]?.length || 0 : 0
+                  const pips = decimalPlaces >= 4 ? Math.abs(diff * 10000) : Math.abs(diff)
+                  return assetClass === 'forex' ? `${pips.toFixed(1)} pips` : `${pips.toFixed(2)} pts`
+                })()}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -2031,8 +2032,17 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
           {trade.tp2 && (
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-                <span>TP2</span>
-                <span>{tpProgress.tp2Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp2Pips.toFixed(1)} pips` : `${tpProgress.tp2Pips.toFixed(2)} pts`}</span>
+                <span>TP2: {formatNumber(trade.tp2, assetClass === 'forex' ? 5 : 2)}</span>
+                <span>{tpProgress.tp2Progress.toFixed(0)}% • {(() => {
+                  const entry = trade.entry_price || 0
+                  const tp2 = trade.tp2 || 0
+                  const direction = trade.direction?.toLowerCase() === 'long' ? 1 : -1
+                  const diff = direction === 1 ? (tp2 - entry) : (entry - tp2)
+                  const entryStr = entry.toString()
+                  const decimalPlaces = entryStr.includes('.') ? entryStr.split('.')[1]?.length || 0 : 0
+                  const pips = decimalPlaces >= 4 ? Math.abs(diff * 10000) : Math.abs(diff)
+                  return assetClass === 'forex' ? `${pips.toFixed(1)} pips` : `${pips.toFixed(2)} pts`
+                })()}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -2047,8 +2057,17 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
           {trade.tp3 && (
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-                <span>TP3</span>
-                <span>{tpProgress.tp3Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp3Pips.toFixed(1)} pips` : `${tpProgress.tp3Pips.toFixed(2)} pts`}</span>
+                <span>TP3: {formatNumber(trade.tp3, assetClass === 'forex' ? 5 : 2)}</span>
+                <span>{tpProgress.tp3Progress.toFixed(0)}% • {(() => {
+                  const entry = trade.entry_price || 0
+                  const tp3 = trade.tp3 || 0
+                  const direction = trade.direction?.toLowerCase() === 'long' ? 1 : -1
+                  const diff = direction === 1 ? (tp3 - entry) : (entry - tp3)
+                  const entryStr = entry.toString()
+                  const decimalPlaces = entryStr.includes('.') ? entryStr.split('.')[1]?.length || 0 : 0
+                  const pips = decimalPlaces >= 4 ? Math.abs(diff * 10000) : Math.abs(diff)
+                  return assetClass === 'forex' ? `${pips.toFixed(1)} pips` : `${pips.toFixed(2)} pts`
+                })()}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -2060,6 +2079,40 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
               </div>
             </div>
           )}
+        </div>
+      )}
+      
+      {/* TP Hit Display - Show when TP was actually hit with timestamp and price */}
+      {isTpHit && closedAt && closePrice && (
+        <div className="mb-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/40 relative z-10">
+          <div className="flex items-start gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-emerald-300 mb-1">TP1 Hit!</p>
+              <div className="text-[10px] text-emerald-400/80 space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3 h-3" />
+                  <span>Hit at {new Date(closedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <DollarSign className="w-3 h-3" />
+                  <span>Price: {formatNumber(closePrice, assetClass === 'forex' ? 5 : 2)}</span>
+                </div>
+                {trade.tp2 && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Target className="w-3 h-3" />
+                    <span>Next: TP2 at {formatNumber(trade.tp2, assetClass === 'forex' ? 5 : 2)}</span>
+                  </div>
+                )}
+                {!trade.tp2 && trade.tp3 && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <Target className="w-3 h-3" />
+                    <span>Next: TP3 at {formatNumber(trade.tp3, assetClass === 'forex' ? 5 : 2)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
       

@@ -54,27 +54,42 @@ export function calculateTPProgress(trade: any, currentPrice: number): {
     
     const progress = entryToTarget > 0 ? Math.min(100, Math.max(0, (entryToCurrent / entryToTarget) * 100)) : 0
     
-    // Calculate pips based on asset class and price format
+    // Calculate pips/points from entry to TARGET (not current price)
+    // This shows how many pips/points TO the target, not from entry to current
+    const targetDiff = direction === 1 ? (target - entry) : (entry - target)
+    
+    // Determine asset class from entry price format
     const entryStr = entry.toString()
     const hasDecimal = entryStr.includes('.')
     const decimalPlaces = hasDecimal ? entryStr.split('.')[1]?.length || 0 : 0
     
     let pips = 0
-    const priceDiff = direction === 1 ? (currentPrice - entry) : (entry - currentPrice)
     
-    // Forex: 4-5 decimal places = pips (1 pip = 0.0001 for most pairs, 0.01 for JPY pairs)
+    // Forex: 4-5 decimal places = pips (1 pip = 0.0001 for most pairs)
     if (decimalPlaces >= 4) {
-      // Most forex pairs: 1 pip = 0.0001
-      pips = Math.abs(priceDiff * 10000)
-      // JPY pairs (like USDJPY) have 2-3 decimal places, but we check for 4+ so this is correct
+      pips = Math.abs(targetDiff * 10000)
     } 
-    // Crypto/Stocks: Use price difference directly (no pips concept, but show as "points")
+    // Crypto/Stocks/Indices: Use price difference directly as points
     else if (decimalPlaces <= 2) {
-      pips = Math.abs(priceDiff)
+      pips = Math.abs(targetDiff)
     }
-    // Commodities: Usually 2-3 decimal places
+    // Commodities with 2-3 decimal places (like XAUUSD with 2 decimals)
+    else if (decimalPlaces === 2 || decimalPlaces === 3) {
+      pips = Math.abs(targetDiff) // For gold, 1 point = $1
+    }
+    // Commodities with more decimals (like XAUUSD sometimes has 6 decimals)
     else {
-      pips = Math.abs(priceDiff * 100) // For commodities like gold (2 decimal places)
+      // For high-precision commodities, treat as points (1 point = 1 unit)
+      pips = Math.abs(targetDiff)
+    }
+    
+    // Calculate current progress pips (from entry to current, not to target)
+    const currentDiff = direction === 1 ? (currentPrice - entry) : (entry - currentPrice)
+    let currentPips = 0
+    if (decimalPlaces >= 4) {
+      currentPips = Math.abs(currentDiff * 10000)
+    } else {
+      currentPips = Math.abs(currentDiff)
     }
     
     const percent = ((currentPrice - entry) / entry) * 100 * direction

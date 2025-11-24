@@ -7,10 +7,26 @@ export type InstrumentType = 'crypto' | 'forex' | 'index' | 'stock' | 'commodity
 
 export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d'
 
+export type SignalStyle = 'scalp' | 'intraday' | 'swing'
+
 export interface SymbolConfig {
   symbol: string            // FMP Ticker
   type: InstrumentType
   enabledTimeframes: Timeframe[]
+}
+
+export interface RiskConfig {
+  atrMultipleSL: number
+  rrTarget: number
+}
+
+export const RISK_CONFIG: Record<InstrumentType, RiskConfig> = {
+  forex:     { atrMultipleSL: 1.5, rrTarget: 2.0 },
+  index:     { atrMultipleSL: 1.5, rrTarget: 1.8 },
+  stock:     { atrMultipleSL: 2.0, rrTarget: 2.5 },
+  crypto:    { atrMultipleSL: 2.5, rrTarget: 3.0 },
+  commodity: { atrMultipleSL: 2.0, rrTarget: 2.5 },
+  metal:     { atrMultipleSL: 1.5, rrTarget: 2.0 },
 }
 
 /**
@@ -31,11 +47,11 @@ export const SYMBOLS: SymbolConfig[] = [
   { symbol: 'USDCAD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   
   // Commodities
-  { symbol: 'XAUUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] }, // Gold
-  { symbol: 'XAGUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] }, // Silver
-  { symbol: 'CLUSD', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] }, // Crude Oil
+  { symbol: 'XAUUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
+  { symbol: 'XAGUSD', type: 'metal', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
+  { symbol: 'CLUSD', type: 'commodity', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
   
-  // Stocks - Tech
+  // Stocks
   { symbol: 'NVDA', type: 'stock', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
   { symbol: 'AAPL', type: 'stock', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
   { symbol: 'MSFT', type: 'stock', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
@@ -43,9 +59,9 @@ export const SYMBOLS: SymbolConfig[] = [
   { symbol: 'TSLA', type: 'stock', enabledTimeframes: ['15m', '1h', '4h', '1d'] },
   
   // Indices
-  { symbol: '^GSPC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] }, // S&P 500
-  { symbol: '^DJI', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },  // Dow Jones
-  { symbol: '^IXIC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] }, // Nasdaq
+  { symbol: '^GSPC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
+  { symbol: '^DJI', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
+  { symbol: '^IXIC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
 ]
 
 /**

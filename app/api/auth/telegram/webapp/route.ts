@@ -47,8 +47,11 @@ export async function POST(req: NextRequest) {
     try {
       supabase = supabaseServer()
     } catch (error: any) {
-      console.error("[v0] Failed to initialize Supabase:", error)
-      return NextResponse.json({ error: "Database connection error" }, { status: 500 })
+      console.error("[v0] Failed to initialize Supabase client:", error)
+      return NextResponse.json({ 
+        error: "Database connection error", 
+        details: error.message || "Failed to initialize Supabase client. Please check Supabase service status." 
+      }, { status: 500 })
     }
 
     // Extract user data
@@ -128,7 +131,23 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("[v0] WebApp auth upsert error:", error)
       console.error("[v0] Error details:", JSON.stringify(error, null, 2))
-      return NextResponse.json({ error: error.message || "Database error" }, { status: 500 })
+      console.error("[v0] Error code:", error.code)
+      console.error("[v0] Error hint:", error.hint)
+      
+      // Check if it's a Supabase service issue
+      if (error.message?.includes("Internal server error") || error.code === "PGRST301" || error.code === "PGRST116") {
+        return NextResponse.json({ 
+          error: "Supabase service temporarily unavailable", 
+          details: "The authentication service is currently experiencing issues. Please try again in a few moments.",
+          code: error.code 
+        }, { status: 503 }) // 503 Service Unavailable
+      }
+      
+      return NextResponse.json({ 
+        error: error.message || "Database error", 
+        details: error.hint || error.details || "Failed to save user data",
+        code: error.code 
+      }, { status: 500 })
     }
 
     if (!userData) {
@@ -167,8 +186,22 @@ export async function POST(req: NextRequest) {
     return res
   } catch (err: any) {
     console.error("[v0] WebApp auth route error:", err)
+    console.error("[v0] Error stack:", err.stack)
+    
+    // Check if it's a Supabase connection issue
+    if (err.message?.includes("fetch failed") || err.message?.includes("ECONNREFUSED") || err.message?.includes("ENOTFOUND")) {
+      return NextResponse.json(
+        { 
+          error: "Supabase service unavailable", 
+          details: "Unable to connect to the database. Please check Supabase service status and try again.",
+          code: "SERVICE_UNAVAILABLE"
+        },
+        { status: 503 }
+      )
+    }
+    
     return NextResponse.json(
-      { error: "Internal server error", details: err.message },
+      { error: "Internal server error", details: err.message || "An unexpected error occurred during authentication" },
       { status: 500 }
     )
   }

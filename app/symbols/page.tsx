@@ -28,6 +28,9 @@ type SymbolWithPrice = Symbol & {
   priceChange: number | null
   lastPriceUpdate: string | null
   activeSignal: Signal | null
+  signalCount: number
+  volatility?: number
+  volume?: number
 }
 
 const assetClassIcons = {
@@ -115,19 +118,25 @@ export default function SymbolsPage() {
       try {
         const supabase = createSupabaseClient()
 
-        // Fetch active signals grouped by symbol_id
+        // Fetch active signals grouped by symbol_id and count them
         const { data: signalsData } = await supabase
           .from("signals")
           .select("*, symbol_id, symbols(fmp_symbol, display_symbol)")
           .eq("status", "active")
           .order("activated_at", { ascending: false })
 
-        // Create a map of symbol_id -> latest signal
+        // Create a map of symbol_id -> latest signal and count
         const signalMap = new Map<string, Signal>()
+        const signalCountMap = new Map<string, number>()
         if (signalsData) {
           signalsData.forEach((signal: any) => {
-            if (signal.symbol_id && !signalMap.has(signal.symbol_id)) {
-              signalMap.set(signal.symbol_id, signal as Signal)
+            if (signal.symbol_id) {
+              // Count signals per symbol
+              signalCountMap.set(signal.symbol_id, (signalCountMap.get(signal.symbol_id) || 0) + 1)
+              // Store latest signal
+              if (!signalMap.has(signal.symbol_id)) {
+                signalMap.set(signal.symbol_id, signal as Signal)
+              }
             }
           })
         }
@@ -163,6 +172,7 @@ export default function SymbolsPage() {
         const symbolsWithData: SymbolWithPrice[] = symbols.map((symbol) => {
           const priceData = priceMap.get(symbol.id) || { price: null, change: null, timestamp: null }
           const activeSignal = signalMap.get(symbol.id) || null
+          const signalCount = signalCountMap.get(symbol.id) || 0
 
           return {
             ...symbol,
@@ -170,6 +180,10 @@ export default function SymbolsPage() {
             priceChange: priceData.change,
             lastPriceUpdate: priceData.timestamp,
             activeSignal,
+            signalCount,
+            // Calculate volatility from price change (0-100 scale)
+            volatility: priceData.change !== null ? Math.min(100, Math.abs(priceData.change) * 20) : 0,
+            volume: null, // Can be added from API later
           }
         })
 
@@ -193,6 +207,7 @@ export default function SymbolsPage() {
                           currentPrice: data.price ? parseFloat(String(data.price)) : null,
                           priceChange: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
                           lastPriceUpdate: new Date().toISOString(),
+                          volatility: data.changesPercentage !== null ? Math.min(100, Math.abs(parseFloat(String(data.changesPercentage))) * 20) : 0,
                         }
                       : s
                   )
@@ -422,13 +437,45 @@ function SymbolCard({
 }) {
   const [logoError, setLogoError] = useState(false)
 
+  // Determine sentiment from price change
+  const sentiment = symbol.priceChange !== null 
+    ? (symbol.priceChange > 0 ? 'bullish' : symbol.priceChange < 0 ? 'bearish' : 'neutral')
+    : 'neutral'
+  
+  // Volatility indicator (0-100 scale)
+  const volatilityLevel = symbol.volatility ? Math.min(100, Math.max(0, symbol.volatility)) : 0
+  const volatilityColor = volatilityLevel > 70 ? 'rose' : volatilityLevel > 40 ? 'yellow' : 'emerald'
+
   return (
     <Card
       onClick={() => onSymbolClick(symbol)}
-      className={`p-4 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer active:scale-[0.98] relative overflow-hidden ${
+      className={`p-4 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all cursor-pointer active:scale-[0.98] relative overflow-hidden group ${
         !symbolUnlocked ? "opacity-75" : ""
       }`}
     >
+      {/* Sentiment-based background gradient */}
+      <div className={`absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity ${
+        sentiment === 'bullish'
+          ? "bg-gradient-to-br from-emerald-500/20 via-emerald-400/10 to-transparent"
+          : sentiment === 'bearish'
+          ? "bg-gradient-to-br from-rose-500/20 via-rose-400/10 to-transparent"
+          : "bg-gradient-to-br from-zinc-500/10 to-transparent"
+      }`} />
+      
+      {/* Volatility indicator - corner design from top to bottom */}
+      <div className="absolute top-0 right-0 w-1 h-full z-0">
+        <div 
+          className={`w-full h-full bg-gradient-to-b ${
+            volatilityColor === 'rose' 
+              ? 'from-rose-500/60 via-rose-500/40 to-rose-500/20'
+              : volatilityColor === 'yellow'
+              ? 'from-yellow-500/60 via-yellow-500/40 to-yellow-500/20'
+              : 'from-emerald-500/60 via-emerald-500/40 to-emerald-500/20'
+          }`}
+          style={{ height: `${volatilityLevel}%` }}
+        />
+      </div>
+      
       {/* Lock overlay for locked symbols */}
       {!symbolUnlocked && (
         <div className="absolute top-2 right-2 z-10">
@@ -474,19 +521,15 @@ function SymbolCard({
                 </p>
               )}
             </div>
-            <Badge variant="outline" className={`h-5 text-[10px] ${colorClass}`}>
-              <Icon className="w-3 h-3 mr-1" />
-              {symbol.asset_class}
-            </Badge>
-            {symbol.activeSignal && (
-              <Badge
-                variant="outline"
-                className="h-5 text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-              >
-                <Sparkles className="w-3 h-3 mr-1" />
-                Signal
-              </Badge>
-            )}
+            {/* Category as integrated design element */}
+            <div className={`h-5 px-2 rounded-md text-[10px] font-medium flex items-center gap-1 ${colorClass} backdrop-blur-sm`}>
+              <Icon className="w-3 h-3" />
+              <span>{
+                symbol.asset_class === 'commodity' && (symbol.display_symbol.includes('XAU') || symbol.display_symbol.includes('XAG'))
+                  ? 'Metal'
+                  : symbol.asset_class
+              }</span>
+            </div>
           </div>
           {symbol.name && (
             <p className="text-xs text-zinc-400 mb-2">{symbol.name}</p>
@@ -530,16 +573,22 @@ function SymbolCard({
           )}
         </div>
 
-        {/* Signal Preview - Only show if there's actually an active signal from database */}
-        {symbol.activeSignal && symbol.activeSignal.id && (
+        {/* Signal Count - Show count and navigate to symbol signals */}
+        {symbol.signalCount > 0 && (
           <div className="text-right">
-            <div className="relative inline-block">
-              <div className="absolute inset-0 bg-emerald-500/20 rounded-lg blur-sm animate-pulse" />
-              <Badge className="h-5 px-2 text-[9px] bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/40 text-emerald-300 backdrop-blur-sm relative z-10">
-                <Sparkles className="w-2.5 h-2.5 mr-1" />
-                Signal
-              </Badge>
-            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                router.push(`/signals?symbol=${encodeURIComponent(symbol.display_symbol)}&status=active`)
+              }}
+              className="relative inline-block group"
+            >
+              <div className="absolute inset-0 bg-emerald-500/20 rounded-lg blur-sm animate-pulse group-hover:bg-emerald-500/30 transition-colors" />
+              <div className="h-5 px-2 rounded-lg bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/40 text-emerald-300 backdrop-blur-sm relative z-10 flex items-center gap-1 text-[9px] font-medium">
+                <Sparkles className="w-2.5 h-2.5" />
+                <span>{symbol.signalCount}</span>
+              </div>
+            </button>
           </div>
         )}
       </div>

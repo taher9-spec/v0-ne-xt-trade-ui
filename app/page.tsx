@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
-import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins, Lock, LogOut, Check, Plus } from "lucide-react"
+import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins, Lock, LogOut, Check, Plus, MessageSquare, Target, AlertCircle, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -18,6 +18,7 @@ import type { Signal } from "@/lib/types"
 import { createSupabaseClient } from "@/lib/supabase/client"
 import { getSymbolLogo } from "@/lib/utils/symbolLogos"
 import { isSymbolUnlocked, getRequiredPlanForSymbol } from "@/lib/utils/planSymbols"
+import { calculateTPProgress, getTradeAdvice, getLiquidationMessage } from "@/lib/utils/tradeHelpers"
 
 type SignalLocal = {
   id: string
@@ -414,16 +415,7 @@ export default function NextTradeUI() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/symbols">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 px-3 text-xs border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-white transition-colors"
-            >
-              <Coins className="w-3 h-3 mr-1.5" />
-              Symbols
-            </Button>
-          </Link>
+          {/* Removed Symbols button - it's in bottom navigation */}
         </div>
       </header>
 
@@ -724,6 +716,20 @@ export default function NextTradeUI() {
           </div>
         )}
         
+        {/* Volatility indicator - corner design from top to bottom */}
+        <div className="absolute top-0 right-0 w-1 h-full z-0">
+          <div 
+            className={`w-full h-full bg-gradient-to-b ${
+              volatilityColor === 'rose' 
+                ? 'from-rose-500/60 via-rose-500/40 to-rose-500/20'
+                : volatilityColor === 'yellow'
+                ? 'from-yellow-500/60 via-yellow-500/40 to-yellow-500/20'
+                : 'from-emerald-500/60 via-emerald-500/40 to-emerald-500/20'
+            }`}
+            style={{ height: `${volatility}%` }}
+          />
+        </div>
+        
         {/* Beautiful gradient background based on direction */}
         <div className={`absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity ${
           direction === "long"
@@ -867,9 +873,18 @@ export default function NextTradeUI() {
               Added to Journal
             </span>
           ) : (
-            <span className="flex items-center gap-2">
-              {direction === "long" ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+            <span className="flex items-center gap-2 justify-center">
+              {direction === "long" ? (
+                <TrendingUp className="w-4 h-4 animate-bounce" />
+              ) : (
+                <TrendingDown className="w-4 h-4 animate-bounce" />
+              )}
               Add to Journal
+              {direction === "long" ? (
+                <TrendingUp className="w-3 h-3 opacity-60" />
+              ) : (
+                <TrendingDown className="w-3 h-3 opacity-60" />
+              )}
             </span>
           )}
         </Button>
@@ -1036,155 +1051,12 @@ export default function NextTradeUI() {
         ) : (
           <div className="space-y-3">
             {filteredTrades.map((trade: any) => {
-              // Extract signal data (joined from signals table)
-              const signal = trade.signals || {}
-              const timeframe = signal.timeframe || trade.timeframe || "N/A"
-              const stopLoss = trade.sl || signal.sl || null
-              const targetPrice = trade.tp1 || signal.tp1 || null
-              
-              // Determine if TP1 or SL was hit
-              const isTpHit = trade.status === "tp_hit"
-              const isSlHit = trade.status === "sl_hit"
-              const closePrice = trade.close_price || trade.exit_price
-              const closedAt = trade.closed_at
-
-              // Format date nicely
-              const formatDate = (dateString: string | null | undefined) => {
-                if (!dateString) return ""
-                try {
-                  const date = new Date(dateString)
-                  const now = new Date()
-                  const diffMs = now.getTime() - date.getTime()
-                  const diffMins = Math.floor(diffMs / 60000)
-                  const diffHours = Math.floor(diffMs / 3600000)
-                  const diffDays = Math.floor(diffMs / 86400000)
-
-                  if (diffMins < 1) return "Just now"
-                  if (diffMins < 60) return `${diffMins}m ago`
-                  if (diffHours < 24) return `${diffHours}h ago`
-                  if (diffDays < 7) return `${diffDays}d ago`
-                  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-                } catch {
-                  return ""
-                }
-              }
-
-              // Get current R and % (for open trades use floating, for closed use result)
-              const currentR = trade.status === "open" ? (trade.floating_r ?? 0) : (trade.result_r ?? 0)
-              const currentPercent = trade.status === "open" ? (trade.floating_pnl_percent ?? 0) : (trade.pnl_percent ?? 0)
-
-              return (
-                <Card key={trade.id} className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group">
-                  {/* Background gradient based on performance */}
-                  <div className={`absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity ${
-                    currentR >= 0
-                      ? "bg-gradient-to-br from-emerald-500/20 via-emerald-400/10 to-transparent"
-                      : "bg-gradient-to-br from-rose-500/20 via-rose-400/10 to-transparent"
-                  }`} />
-                  
-                  {/* Header row: symbol + direction pill + timeframe + status pill */}
-                  <div className="flex items-center gap-2 mb-4 flex-wrap relative z-10">
-                    <div className="flex items-center gap-2">
-                      {/* Symbol logo */}
-                      {(() => {
-                        const logoUrl = getSymbolLogo(trade.symbol, (trade as any).symbols?.asset_class)
-                        return logoUrl ? (
-                          <div className="w-8 h-8 rounded-lg bg-zinc-900/50 border border-zinc-800 flex items-center justify-center overflow-hidden p-1">
-                            <img 
-                              src={logoUrl} 
-                              alt={trade.symbol}
-                              className="w-full h-full object-contain"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none'
-                              }}
-                            />
-                          </div>
-                        ) : null
-                      })()}
-                      <h3 className="text-lg font-bold">{trade.symbol}</h3>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={`h-5 text-[10px] ${
-                        trade.direction === "long"
-                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                          : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                      }`}
-                    >
-                      {trade.direction === "long" ? "LONG" : "SHORT"}
-                    </Badge>
-                    {timeframe && timeframe !== "N/A" && (
-                      <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
-                        {timeframe}
-                      </Badge>
-                    )}
-                    <Badge
-                      variant="outline"
-                      className={`h-5 text-[10px] ${
-                        trade.status === "open"
-                          ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
-                          : isTpHit
-                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                          : isSlHit
-                          ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                          : "border-zinc-700 text-zinc-400"
-                      }`}
-                    >
-                      {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
-                    </Badge>
-                  </div>
-
-                  {/* Middle section: Entry/Stop Loss/Target on left, R/% on right */}
-                  <div className="grid grid-cols-2 gap-4 mb-3">
-                    {/* Left block: Entry, Stop Loss, Target */}
-                    <div className="space-y-2">
-                      <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
-                        <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
-                        <p className="text-base font-bold">{formatNumber(trade.entry_price, 2, "N/A")}</p>
-                      </div>
-                      <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
-                        <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
-                        <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, 2, "N/A")}</p>
-                      </div>
-                      <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
-                        <p className="text-[10px] text-zinc-500 mb-1">Target</p>
-                        <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, 2, "N/A")}</p>
-                      </div>
-                    </div>
-
-                    {/* Right block: Current R and Current %} */}
-                    <div className={`flex flex-col justify-center items-end ${currentR >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      <div className="mb-3 text-center">
-                        <p className="text-[10px] text-zinc-500 mb-1">Current R</p>
-                        <p className="text-3xl font-bold">
-                          {currentR > 0 ? "+" : ""}
-                          {formatNumber(currentR, 2, "0.00")}R
-                        </p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-[10px] text-zinc-500 mb-1">Current %</p>
-                        <p className="text-2xl font-semibold">
-                          {currentPercent > 0 ? "+" : ""}
-                          {formatNumber(currentPercent, 2, "0.00")}%
-                        </p>
-                      </div>
-                      {trade.status === "open" && trade.current_price && (
-                        <p className="text-[10px] text-zinc-500 mt-2">${formatNumber(trade.current_price, 2)}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Bottom row: Opened date and Closed info */}
-                  <div className="flex items-center justify-between text-xs text-zinc-500 pt-2 border-t border-zinc-800">
-                    <span>Opened {formatDate(trade.opened_at)}</span>
-                    {trade.status !== "open" && closePrice !== null && closePrice !== undefined && (
-                      <span className="text-zinc-400">
-                        Closed at {formatNumber(closePrice, 2)}
-                      </span>
-                    )}
-                  </div>
-                </Card>
-              )
+              return <TradeCard key={trade.id} trade={trade} onUpdate={() => {
+                // Refresh trades after update
+                fetch("/api/trades/list", { cache: "no-store" })
+                  .then(res => res.json())
+                  .then(data => setTrades(data.trades ?? []))
+              }} />
             })}
           </div>
         )}
@@ -1851,5 +1723,325 @@ export default function NextTradeUI() {
         </nav>
       </div>
     </div>
+  )
+}
+
+// Trade Card Component with notes, TP progress, and notifications
+function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
+  const [showNotes, setShowNotes] = useState(false)
+  const [notes, setNotes] = useState(trade.notes || "")
+  const [savingNotes, setSavingNotes] = useState(false)
+  
+  // Extract signal data
+  const signal = trade.signals || {}
+  const timeframe = signal.timeframe || trade.timeframe || "N/A"
+  const stopLoss = trade.sl || signal.sl || null
+  const targetPrice = trade.tp1 || signal.tp1 || null
+  
+  // Determine if TP1 or SL was hit
+  const isTpHit = trade.status === "tp_hit"
+  const isSlHit = trade.status === "sl_hit"
+  const closePrice = trade.close_price || trade.exit_price
+  const closedAt = trade.closed_at
+
+  // Format date nicely
+  const formatDate = (dateString: string | null | undefined) => {
+    if (!dateString) return ""
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffMs = now.getTime() - date.getTime()
+      const diffMins = Math.floor(diffMs / 60000)
+      const diffHours = Math.floor(diffMs / 3600000)
+      const diffDays = Math.floor(diffMs / 86400000)
+
+      if (diffMins < 1) return "Just now"
+      if (diffMins < 60) return `${diffMins}m ago`
+      if (diffHours < 24) return `${diffHours}h ago`
+      if (diffDays < 7) return `${diffDays}d ago`
+      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    } catch {
+      return ""
+    }
+  }
+
+  // Get current R and % (for open trades use floating, for closed use result)
+  const currentR = trade.status === "open" ? (trade.floating_r ?? 0) : (trade.result_r ?? 0)
+  const currentPercent = trade.status === "open" ? (trade.floating_pnl_percent ?? 0) : (trade.pnl_percent ?? 0)
+  
+  // Calculate TP progress for open trades
+  const currentPrice = trade.status === "open" ? (trade.current_price || trade.entry_price || 0) : (trade.close_price || trade.entry_price || 0)
+  const tpProgress = trade.status === "open" ? calculateTPProgress(trade, currentPrice) : null
+  const tradeAdvice = trade.status === "open" && tpProgress ? getTradeAdvice(trade, tpProgress) : null
+  const liquidationMsg = getLiquidationMessage(trade)
+
+  return (
+    <Card className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group">
+      {/* Background gradient based on performance */}
+      <div className={`absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity ${
+        currentR >= 0
+          ? "bg-gradient-to-br from-emerald-500/20 via-emerald-400/10 to-transparent"
+          : "bg-gradient-to-br from-rose-500/20 via-rose-400/10 to-transparent"
+      }`} />
+      
+      {/* Header row: symbol + integrated direction/timeframe/status design */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap relative z-10">
+        <div className="flex items-center gap-2.5">
+          {/* Symbol logo */}
+          {(() => {
+            const logoUrl = getSymbolLogo(trade.symbol, (trade as any).symbols?.asset_class)
+            return logoUrl ? (
+              <div className="w-9 h-9 rounded-lg bg-zinc-900/50 border border-zinc-800 flex items-center justify-center overflow-hidden p-1">
+                <img 
+                  src={logoUrl} 
+                  alt={trade.symbol}
+                  className="w-full h-full object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none'
+                  }}
+                />
+              </div>
+            ) : null
+          })()}
+          <div>
+            <h3 className="text-lg font-bold">{trade.symbol}</h3>
+            {/* Integrated direction and timeframe as part of card design */}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={`h-4 px-1.5 rounded text-[9px] font-bold flex items-center gap-0.5 ${
+                trade.direction === "long"
+                  ? "bg-emerald-500/20 text-emerald-400"
+                  : "bg-rose-500/20 text-rose-400"
+              }`}>
+                {trade.direction === "long" ? (
+                  <TrendingUp className="w-2.5 h-2.5" />
+                ) : (
+                  <TrendingDown className="w-2.5 h-2.5" />
+                )}
+                <span>{trade.direction.toUpperCase()}</span>
+              </div>
+              {timeframe && timeframe !== "N/A" && (
+                <div className="h-4 px-1.5 rounded text-[9px] bg-zinc-800/50 text-zinc-400 border border-zinc-700/50">
+                  {timeframe}
+                </div>
+              )}
+              <div className={`h-4 px-1.5 rounded text-[9px] font-medium ${
+                trade.status === "open"
+                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                  : isTpHit
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : isSlHit
+                  ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                  : "bg-zinc-800/50 text-zinc-400 border border-zinc-700/50"
+              }`}>
+                {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Middle section: Entry/Stop Loss/Target on left, R/% on right */}
+      <div className="grid grid-cols-2 gap-4 mb-3 relative z-10">
+        {/* Left block: Entry, Stop Loss, Target */}
+        <div className="space-y-2">
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+            <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
+            <p className="text-base font-bold">{formatNumber(trade.entry_price, 2, "N/A")}</p>
+          </div>
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+            <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
+            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, 2, "N/A")}</p>
+          </div>
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+            <p className="text-[10px] text-zinc-500 mb-1">Target</p>
+            <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, 2, "N/A")}</p>
+          </div>
+        </div>
+
+        {/* Right block: Current R and Current %} */}
+        <div className={`flex flex-col justify-center items-end ${currentR >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+          <div className="mb-3 text-center">
+            <p className="text-[10px] text-zinc-500 mb-1">Current R</p>
+            <p className="text-3xl font-bold">
+              {currentR > 0 ? "+" : ""}
+              {formatNumber(currentR, 2, "0.00")}R
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-[10px] text-zinc-500 mb-1">Current %</p>
+            <p className="text-2xl font-semibold">
+              {currentPercent > 0 ? "+" : ""}
+              {formatNumber(currentPercent, 2, "0.00")}%
+            </p>
+          </div>
+          {trade.status === "open" && trade.current_price && (
+            <p className="text-[10px] text-zinc-500 mt-2">${formatNumber(trade.current_price, 2)}</p>
+          )}
+        </div>
+      </div>
+
+      {/* TP Progress for open trades */}
+      {trade.status === "open" && tpProgress && (
+        <div className="mb-3 space-y-2 relative z-10">
+          {trade.tp1 && (
+            <div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
+                <span>TP1</span>
+                <span>{tpProgress.tp1Progress.toFixed(0)}% • {tpProgress.tp1Pips.toFixed(1)} pips</span>
+              </div>
+              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-300 ${
+                    tpProgress.tp1Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/50"
+                  }`}
+                  style={{ width: `${Math.min(100, tpProgress.tp1Progress)}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {trade.tp2 && (
+            <div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
+                <span>TP2</span>
+                <span>{tpProgress.tp2Progress.toFixed(0)}% • {tpProgress.tp2Pips.toFixed(1)} pips</span>
+              </div>
+              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-300 ${
+                    tpProgress.tp2Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/30"
+                  }`}
+                  style={{ width: `${Math.min(100, tpProgress.tp2Progress)}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {trade.tp3 && (
+            <div>
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
+                <span>TP3</span>
+                <span>{tpProgress.tp3Progress.toFixed(0)}% • {tpProgress.tp3Pips.toFixed(1)} pips</span>
+              </div>
+              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-300 ${
+                    tpProgress.tp3Progress >= 100 ? "bg-emerald-500" : "bg-emerald-500/20"
+                  }`}
+                  style={{ width: `${Math.min(100, tpProgress.tp3Progress)}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Friendly advice message */}
+      {tradeAdvice && (
+        <div className={`mb-3 p-2.5 rounded-lg border relative z-10 ${
+          tradeAdvice.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30'
+            : tradeAdvice.type === 'warning'
+            ? 'bg-yellow-500/10 border-yellow-500/30'
+            : 'bg-blue-500/10 border-blue-500/30'
+        }`}>
+          <p className={`text-xs flex items-center gap-1.5 ${
+            tradeAdvice.type === 'success'
+              ? 'text-emerald-300'
+              : tradeAdvice.type === 'warning'
+              ? 'text-yellow-300'
+              : 'text-blue-300'
+          }`}>
+            <AlertCircle className="w-3.5 h-3.5" />
+            {tradeAdvice.message}
+          </p>
+        </div>
+      )}
+      
+      {liquidationMsg && (
+        <div className="mb-3 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 relative z-10">
+          <p className="text-xs text-rose-300 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5" />
+            {liquidationMsg}
+          </p>
+        </div>
+      )}
+      
+      {/* Notes section */}
+      <div className="relative z-10">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            setShowNotes(!showNotes)
+          }}
+          className="w-full flex items-center justify-between text-xs text-zinc-500 hover:text-zinc-300 transition-colors mb-2"
+        >
+          <span className="flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5" />
+            {trade.notes ? "Edit Notes" : "Add Notes"}
+          </span>
+          {trade.notes && <span className="text-[10px]">({trade.notes.length} chars)</span>}
+        </button>
+        {showNotes && (
+          <div className="space-y-2">
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add your thoughts, strategy, or feedback..."
+              className="text-xs bg-zinc-900/50 border-zinc-800"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={async (e) => {
+                  e.stopPropagation()
+                  setSavingNotes(true)
+                  try {
+                    const res = await fetch(`/api/trades/${trade.id}/notes`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ notes }),
+                    })
+                    if (res.ok) {
+                      setShowNotes(false)
+                      onUpdate()
+                    }
+                  } catch (err) {
+                    console.error("Failed to save notes:", err)
+                  } finally {
+                    setSavingNotes(false)
+                  }
+                }}
+                className="flex-1 h-7 text-xs bg-emerald-500 hover:bg-emerald-600"
+                disabled={savingNotes}
+              >
+                {savingNotes ? "Saving..." : "Save"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowNotes(false)
+                  setNotes(trade.notes || "")
+                }}
+                className="h-7 text-xs"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom row: Opened date and Closed info */}
+      <div className="flex items-center justify-between text-xs text-zinc-500 pt-3 border-t border-zinc-800/50 relative z-10">
+        <span>Opened {formatDate(trade.opened_at)}</span>
+        {trade.status !== "open" && closePrice !== null && closePrice !== undefined && (
+          <span className="text-zinc-400">
+            Closed at {formatNumber(closePrice, 2)} • {formatDate(closedAt)}
+          </span>
+        )}
+      </div>
+    </Card>
   )
 }

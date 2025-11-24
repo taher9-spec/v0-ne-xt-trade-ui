@@ -15,8 +15,9 @@ import { LogOut, Check } from "lucide-react"
 import Image from "next/image"
 import { isTelegramWebApp, getTelegramInitData } from "@/lib/telegramWebApp"
 import { Trade, TradeStats, formatNumber, parseNumber } from "@/types/trades"
+import type { Signal } from "@/lib/types"
 
-type Signal = {
+type SignalLocal = {
   id: string
   symbol: string
   symbol_id?: string | null
@@ -386,9 +387,11 @@ export default function NextTradeUI() {
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-zinc-400">Market Overview</h2>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500">
-            View All
-          </Button>
+          <Link href="/signals">
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500">
+              View All
+            </Button>
+          </Link>
         </div>
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
           {quotes.map((quote) => (

@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseServer } from "@/lib/supabaseServer"
+import { cookies } from "next/headers"
+import type { Signal } from "@/lib/types"
 
 export async function GET(req: NextRequest) {
   try {
+    // Require authenticated user (same pattern as /api/trades/*)
+    const cookieStore = await cookies()
+    const userId = cookieStore.get("tg_user_id")?.value
+
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const searchParams = req.nextUrl.searchParams
     const limit = parseInt(searchParams.get("limit") || "50", 10)
     const symbolId = searchParams.get("symbolId")
@@ -15,15 +25,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Database connection failed", details: error.message, signals: [] }, { status: 500 })
     }
 
-    // Fetch signals from today (last 24 hours) that are active or pending
+    // Fetch signals from today (today at 00:00 UTC)
     const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    today.setUTCHours(0, 0, 0, 0)
+    const todayISO = today.toISOString()
 
     // Build query - join with symbols if symbol_id exists
     let query = supabase
       .from("signals")
       .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
-      .gte("created_at", today.toISOString())
+      .gte("created_at", todayISO)
       .order("created_at", { ascending: false })
       .limit(limit)
 
@@ -33,6 +44,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Filter by status if column exists (status column exists based on schema check)
+    // Only show active or pending signals
     query = query.in("status", ["active", "pending"])
 
     const { data, error } = await query
@@ -47,7 +59,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Ensure we return an array, never null or undefined
-    const signals = Array.isArray(data) ? data : []
+    const signals = (Array.isArray(data) ? data : []) as Signal[]
     console.log(`[v0] Returning ${signals.length} signals from database`)
     
     return NextResponse.json({ signals }, { 

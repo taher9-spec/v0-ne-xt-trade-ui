@@ -600,6 +600,8 @@ async function buildSignalFromFmp(
   }
 
   if (!direction) {
+    // Log why signal wasn't created for debugging
+    console.log(`[smart-endpoint] Signal threshold not met for ${symbol} ${timeframe}: LONG=${longScore.toFixed(1)}, SHORT=${shortScore.toFixed(1)}, threshold=${SIGNAL_SCORE_THRESHOLD}`)
     return null
   }
 
@@ -760,6 +762,7 @@ Deno.serve(async (req: Request) => {
 
           if (!signal) {
             stats.skipped++
+            console.log(`[smart-endpoint] No signal generated for ${fmpSymbol} ${timeframe} (score below threshold or insufficient data)`)
             continue
           }
 

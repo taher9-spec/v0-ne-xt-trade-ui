@@ -89,12 +89,15 @@ function calculateATR(candles: any[], period: number = 14): number | null {
 /**
  * Fetch FMP data for a symbol and build market context
  */
-export async function fetchFmpDataForSymbol(fmpSymbol: string): Promise<MarketData | null> {
+export async function fetchFmpDataForSymbol(
+  fmpSymbol: string, 
+  timeframe: "1min" | "5min" | "15min" | "30min" | "1hour" | "4hour" | "1day" = "1hour"
+): Promise<MarketData | null> {
   try {
     // Fetch quote and candles in parallel
     const [quote, candles] = await Promise.all([
       getFmpQuote(fmpSymbol),
-      getFmpHistoricalCandles(fmpSymbol, "1hour", 200),
+      getFmpHistoricalCandles(fmpSymbol, timeframe, 200),
     ])
 
     if (!Array.isArray(candles) || candles.length < 50) {
@@ -148,7 +151,11 @@ export async function fetchFmpDataForSymbol(fmpSymbol: string): Promise<MarketDa
  * Build signal from FMP market data using trading rules
  * Returns null if no signal should be generated
  */
-export function buildSignalFromFmp(symbol: Symbol, marketData: MarketData): SignalDraft | null {
+export function buildSignalFromFmp(
+  symbol: Symbol, 
+  marketData: MarketData,
+  timeframe: "1min" | "5min" | "15min" | "30min" | "1hour" | "4hour" | "1day" = "1hour"
+): SignalDraft | null {
   try {
     const { ema50, ema200, currentPrice, rsi, atr } = marketData
 
@@ -178,7 +185,8 @@ export function buildSignalFromFmp(symbol: Symbol, marketData: MarketData): Sign
       tp1 = entry + risk * 2 // 2:1 RR
       tp2 = entry + risk * 3 // 3:1 RR
       tp3 = entry + risk * 4 // 4:1 RR
-      reason = `Bullish EMA stack (50>200) + RSI oversold bounce (${rsi.toFixed(1)}) on H1; ATR-based stop`
+      const tfLabel = timeframe === "1min" ? "1m" : timeframe === "5min" ? "5m" : timeframe === "15min" ? "15m" : timeframe === "30min" ? "30m" : timeframe === "1hour" ? "1h" : timeframe === "4hour" ? "4h" : "1d"
+      reason = `Bullish EMA stack (50>200) + RSI oversold bounce (${rsi.toFixed(1)}) on ${tfLabel}; ATR-based stop`
       confidence = rsi < 25 ? 4 : 3
     }
     // Short signal: bearish trend + overbought rejection
@@ -189,7 +197,8 @@ export function buildSignalFromFmp(symbol: Symbol, marketData: MarketData): Sign
       tp1 = entry - risk * 2 // 2:1 RR
       tp2 = entry - risk * 3 // 3:1 RR
       tp3 = entry - risk * 4 // 4:1 RR
-      reason = `Bearish EMA stack (50<200) + RSI overbought rejection (${rsi.toFixed(1)}) on H1; ATR-based stop`
+      const tfLabel = timeframe === "1min" ? "1m" : timeframe === "5min" ? "5m" : timeframe === "15min" ? "15m" : timeframe === "30min" ? "30m" : timeframe === "1hour" ? "1h" : timeframe === "4hour" ? "4h" : "1d"
+      reason = `Bearish EMA stack (50<200) + RSI overbought rejection (${rsi.toFixed(1)}) on ${tfLabel}; ATR-based stop`
       confidence = rsi > 75 ? 4 : 3
     }
 
@@ -210,10 +219,23 @@ export function buildSignalFromFmp(symbol: Symbol, marketData: MarketData): Sign
 
     // Determine signal type based on timeframe and market
     let type: "scalp" | "intraday" | "swing" = "intraday"
-    if (symbol.asset_class === "forex" || symbol.asset_class === "crypto") {
+    if (timeframe === "1min" || timeframe === "5min") {
+      type = "scalp"
+    } else if (timeframe === "15min" || timeframe === "30min" || timeframe === "1hour") {
       type = "intraday"
     } else {
       type = "swing"
+    }
+
+    // Map timeframe to display format
+    const timeframeMap: Record<string, string> = {
+      "1min": "1m",
+      "5min": "5m",
+      "15min": "15m",
+      "30min": "30m",
+      "1hour": "1h",
+      "4hour": "4h",
+      "1day": "1d"
     }
 
     return {
@@ -224,7 +246,7 @@ export function buildSignalFromFmp(symbol: Symbol, marketData: MarketData): Sign
       tp1,
       tp2,
       tp3,
-      timeframe: "H1", // 1-hour timeframe
+      timeframe: timeframeMap[timeframe] || "1h",
       rr_ratio: rrRatio,
       confidence,
       reason_summary: reason,

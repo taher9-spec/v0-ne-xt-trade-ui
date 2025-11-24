@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
-import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins, Lock, LogOut, Check, Plus, MessageSquare, Target, AlertCircle, X } from "lucide-react"
+import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins, Lock, LogOut, Check, Plus, MessageSquare, Target, AlertCircle, X, Clock, DollarSign, TrendingUp as UpIcon, TrendingDown as DownIcon, Info, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -1833,51 +1833,64 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const tradeAdvice = trade.status === "open" && tpProgress ? getTradeAdvice(trade, tpProgress) : null
   const liquidationMsg = getLiquidationMessage(trade)
 
-  // Determine sentiment/direction for card background
-  const direction = trade.direction === "long" ? "long" : "short"
-  const sentiment = currentR >= 0 ? "positive" : "negative"
+  // Direction for card background - CLEAR: green=long, red=short
+  const direction = (trade.direction || "").toLowerCase() === "long" ? "long" : "short"
   
-  // Calculate volatility for indicator
+  // Sentiment/Volume for side indicator - based on price change
   const assetClass = (trade as any).symbols?.asset_class || 'forex'
   const priceChange = trade.status === "open" ? (trade.floating_pnl_percent || 0) : (trade.pnl_percent || 0)
-  const volatility = Math.min(100, Math.abs(priceChange) * 20)
-  const volatilityColor = volatility > 70 ? 'rose' : volatility > 40 ? 'yellow' : 'emerald'
+  const sentiment = priceChange >= 0 ? "positive" : "negative"
+  const sentimentIntensity = Math.min(100, Math.abs(priceChange) * 10) // Scale for better visibility
+  const sentimentColor = sentiment === "positive" 
+    ? (sentimentIntensity > 50 ? 'emerald' : 'yellow')
+    : (sentimentIntensity > 50 ? 'rose' : 'yellow')
+
+  // Category
+  const category = assetClass || 'forex'
+  const categoryLabels: Record<string, string> = {
+    'forex': 'Forex',
+    'crypto': 'Crypto',
+    'stock': 'Stock',
+    'index': 'Index',
+    'commodity': 'Commodity',
+    'metal': 'Metal'
+  }
 
   return (
     <Card className={`p-5 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
       direction === "long"
-        ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
-        : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
+        ? "bg-gradient-to-br from-emerald-950/60 via-zinc-950 to-emerald-950/40"
+        : "bg-gradient-to-br from-rose-950/60 via-zinc-950 to-rose-950/40"
     }`}>
-      {/* Volatility indicator - corner design from top to bottom (bigger and more visible) */}
-      <div className="absolute top-0 right-0 w-2 h-full z-0">
+      {/* Side indicator - Sentiment/Volume (NOT direction) */}
+      <div className="absolute top-0 right-0 w-2.5 h-full z-0">
         <div 
           className={`w-full h-full bg-gradient-to-b ${
-            volatilityColor === 'rose' 
-              ? 'from-rose-500/80 via-rose-500/60 to-rose-500/40'
-              : volatilityColor === 'yellow'
-              ? 'from-yellow-500/80 via-yellow-500/60 to-yellow-500/40'
-              : 'from-emerald-500/80 via-emerald-500/60 to-emerald-500/40'
+            sentimentColor === 'rose' 
+              ? 'from-rose-500/90 via-rose-500/70 to-rose-500/50'
+              : sentimentColor === 'yellow'
+              ? 'from-yellow-500/90 via-yellow-500/70 to-yellow-500/50'
+              : 'from-emerald-500/90 via-emerald-500/70 to-emerald-500/50'
           }`}
-          style={{ height: `${Math.max(10, volatility)}%` }}
+          style={{ height: `${Math.max(15, sentimentIntensity)}%` }}
         />
       </div>
       
-      {/* Background gradient based on performance */}
-      <div className={`absolute inset-0 opacity-10 group-hover:opacity-15 transition-opacity ${
-        sentiment === "positive"
-          ? "bg-gradient-to-br from-emerald-500/20 via-emerald-400/10 to-transparent"
-          : "bg-gradient-to-br from-rose-500/20 via-rose-400/10 to-transparent"
+      {/* Subtle direction overlay - makes direction even clearer */}
+      <div className={`absolute inset-0 opacity-5 group-hover:opacity-8 transition-opacity ${
+        direction === "long"
+          ? "bg-gradient-to-br from-emerald-500/30 via-emerald-400/15 to-transparent"
+          : "bg-gradient-to-br from-rose-500/30 via-rose-400/15 to-transparent"
       }`} />
       
-      {/* Header row: symbol + integrated direction/timeframe/status design */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap relative z-10">
-        <div className="flex items-center gap-2.5">
+      {/* Header: Logo, Symbol Name, Category, Timestamp */}
+      <div className="flex items-start justify-between mb-4 relative z-10">
+        <div className="flex items-center gap-3 flex-1">
           {/* Symbol logo */}
           {(() => {
-            const logoUrl = getSymbolLogo(trade.symbol, (trade as any).symbols?.asset_class)
+            const logoUrl = getSymbolLogo(trade.symbol, assetClass)
             return logoUrl ? (
-              <div className="w-9 h-9 rounded-lg bg-zinc-900/50 border border-zinc-800 flex items-center justify-center overflow-hidden p-1">
+              <div className="w-12 h-12 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center overflow-hidden p-1.5 flex-shrink-0">
                 <img 
                   src={logoUrl} 
                   alt={trade.symbol}
@@ -1887,31 +1900,73 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
                   }}
                 />
               </div>
-            ) : null
-          })()}
-          <div>
-            <h3 className="text-lg font-bold">{trade.symbol}</h3>
-            {/* Timeframe and status only - direction shown via card background */}
-            <div className="flex items-center gap-1.5 mt-0.5">
-              {timeframe && timeframe !== "N/A" && (
-                <div className="h-4 px-1.5 rounded text-[9px] bg-zinc-800/50 text-zinc-400 border border-zinc-700/50">
-                  {timeframe}
-                </div>
-              )}
-              <div className={`h-4 px-1.5 rounded text-[9px] font-medium ${
-                trade.status === "open"
-                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                  : isTpHit
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                  : isSlHit
-                  ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
-                  : "bg-zinc-800/50 text-zinc-400 border border-zinc-700/50"
-              }`}>
-                {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
+            ) : (
+              <div className="w-12 h-12 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center flex-shrink-0">
+                <span className="text-lg font-bold text-zinc-400">{trade.symbol.substring(0, 2)}</span>
               </div>
+            )
+          })()}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-lg font-bold truncate">{trade.symbol}</h3>
+              {/* Category badge */}
+              <div className="h-5 px-2 rounded text-[10px] bg-zinc-800/70 text-zinc-300 border border-zinc-700/50 flex-shrink-0">
+                {categoryLabels[category] || category}
+              </div>
+            </div>
+            {/* Timestamp */}
+            <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <Clock className="w-3 h-3" />
+              <span>{formatDate(trade.opened_at)}</span>
             </div>
           </div>
         </div>
+        {/* Direction arrow indicator */}
+        <div className={`flex-shrink-0 ${direction === "long" ? "text-emerald-400" : "text-rose-400"}`}>
+          {direction === "long" ? (
+            <UpIcon className="w-6 h-6" />
+          ) : (
+            <DownIcon className="w-6 h-6" />
+          )}
+        </div>
+      </div>
+      
+      {/* Status and Timeframe */}
+      <div className="flex items-center gap-2 mb-4 relative z-10">
+        {timeframe && timeframe !== "N/A" && (
+          <div className="h-5 px-2 rounded text-[10px] bg-zinc-800/70 text-zinc-400 border border-zinc-700/50">
+            {timeframe}
+          </div>
+        )}
+        <div className={`h-5 px-2 rounded text-[10px] font-medium ${
+          trade.status === "open"
+            ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+            : isTpHit
+            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+            : isSlHit
+            ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+            : "bg-zinc-800/70 text-zinc-400 border border-zinc-700/50"
+        }`}>
+          {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
+        </div>
+        {/* TP Hit Info - Show timestamp and price if TP was hit */}
+        {isTpHit && closedAt && closePrice && (
+          <div className="flex items-center gap-1.5 text-xs text-emerald-400 ml-auto">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Hit at {new Date(closedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+            <DollarSign className="w-3 h-3" />
+            <span>{formatNumber(closePrice, assetClass === 'forex' ? 5 : 2)}</span>
+          </div>
+        )}
+        {/* SL Hit Info */}
+        {isSlHit && closedAt && closePrice && (
+          <div className="flex items-center gap-1.5 text-xs text-rose-400 ml-auto">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>Hit at {new Date(closedAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+            <DollarSign className="w-3 h-3" />
+            <span>{formatNumber(closePrice, assetClass === 'forex' ? 5 : 2)}</span>
+          </div>
+        )}
       </div>
 
       {/* Middle section: Entry/Stop Loss/Target on left, R/% on right */}
@@ -2008,42 +2063,48 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
         </div>
       )}
       
-      {/* Friendly advice message */}
+      {/* Advice messages with proper icons */}
       {tradeAdvice && (
-        <div className={`mb-3 p-2.5 rounded-lg border relative z-10 ${
+        <div className={`mb-3 p-3 rounded-lg border relative z-10 backdrop-blur-sm ${
           tradeAdvice.type === 'success'
-            ? 'bg-emerald-500/10 border-emerald-500/30'
+            ? 'bg-emerald-500/10 border-emerald-500/40'
             : tradeAdvice.type === 'warning'
-            ? 'bg-yellow-500/10 border-yellow-500/30'
-            : 'bg-blue-500/10 border-blue-500/30'
+            ? 'bg-yellow-500/10 border-yellow-500/40'
+            : 'bg-blue-500/10 border-blue-500/40'
         }`}>
-          <p className={`text-xs flex items-center gap-1.5 ${
+          <div className={`flex items-start gap-2.5 ${
             tradeAdvice.type === 'success'
               ? 'text-emerald-300'
               : tradeAdvice.type === 'warning'
               ? 'text-yellow-300'
               : 'text-blue-300'
           }`}>
-            <AlertCircle className="w-3.5 h-3.5" />
-            {tradeAdvice.message}
-          </p>
+            {tradeAdvice.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            ) : tradeAdvice.type === 'warning' ? (
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            ) : (
+              <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            )}
+            <p className="text-xs leading-relaxed">{tradeAdvice.message.replace(/[🎯💡📈⚠️]/g, '').trim()}</p>
+          </div>
         </div>
       )}
       
       {liquidationMsg && (
-        <div className={`mb-3 p-2.5 rounded-lg border relative z-10 ${
+        <div className={`mb-3 p-3 rounded-lg border relative z-10 backdrop-blur-sm ${
           liquidationMsg.type === 'error'
-            ? 'bg-rose-500/10 border-rose-500/30'
-            : 'bg-yellow-500/10 border-yellow-500/30'
+            ? 'bg-rose-500/10 border-rose-500/40'
+            : 'bg-yellow-500/10 border-yellow-500/40'
         }`}>
-          <p className={`text-xs flex items-center gap-1.5 ${
+          <div className={`flex items-start gap-2.5 ${
             liquidationMsg.type === 'error'
               ? 'text-rose-300'
               : 'text-yellow-300'
           }`}>
-            <AlertCircle className="w-3.5 h-3.5" />
-            {liquidationMsg.message}
-          </p>
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <p className="text-xs leading-relaxed">{liquidationMsg.message.replace(/[💔]/g, '').trim()}</p>
+          </div>
         </div>
       )}
       

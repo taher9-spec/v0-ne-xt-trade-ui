@@ -42,71 +42,87 @@ export async function GET(req: NextRequest) {
     // 2) Process each symbol
     for (const sym of symbols) {
       try {
-        // 2a) Get data from FMP
-        const marketData = await fetchFmpDataForSymbol(sym.fmp_symbol)
-
-        if (!marketData) {
-          console.log(`[cron] Skipping ${sym.fmp_symbol}: insufficient market data`)
-          continue
+        // Determine which timeframes to check based on asset class
+        const timeframesToCheck: Array<"1min" | "5min" | "15min" | "30min" | "1hour" | "4hour" | "1day"> = []
+        if (sym.asset_class === "crypto" || sym.asset_class === "forex") {
+          // Crypto and Forex: check multiple timeframes
+          timeframesToCheck.push("5min", "15min", "1hour", "4hour")
+        } else {
+          // Stocks, indices, commodities: focus on higher timeframes
+          timeframesToCheck.push("1hour", "4hour", "1day")
         }
 
-        // 2b) Apply rules → returns null if no setup
-        const draft = buildSignalFromFmp(sym, marketData)
+        // Try each timeframe
+        for (const tf of timeframesToCheck) {
+          try {
+            // 2a) Get data from FMP for this timeframe
+            const marketData = await fetchFmpDataForSymbol(sym.fmp_symbol, tf)
 
-        if (!draft) {
-          console.log(`[cron] Skipping ${sym.fmp_symbol}: no signal conditions met`)
-          continue
-        }
+            if (!marketData) {
+              continue // Try next timeframe
+            }
 
-        // 2c) Check if there is an active signal for same symbol+timeframe+engine_version
-        const { data: existing } = await supabase
-          .from("signals")
-          .select("id")
-          .eq("symbol_id", sym.id)
-          .eq("timeframe", draft.timeframe)
-          .eq("status", "active")
-          .eq("engine_version", "v1.0")
-          .limit(1)
-          .maybeSingle()
+            // 2b) Apply rules → returns null if no setup
+            const draft = buildSignalFromFmp(sym, marketData, tf)
 
-        if (existing) {
-          console.log(`[cron] Skipping ${sym.fmp_symbol}: active signal already exists`)
-          continue
-        }
+            if (!draft) {
+              continue // Try next timeframe
+            }
 
-        // 2d) Insert new signal
-        const { data: inserted, error: insErr } = await supabase
-          .from("signals")
-          .insert({
-            symbol: sym.fmp_symbol, // Keep for backward compatibility
-            symbol_id: sym.id,
-            direction: draft.direction,
-            type: draft.type,
-            market: sym.asset_class,
-            entry: draft.entry,
-            sl: draft.sl,
-            tp1: draft.tp1,
-            tp2: draft.tp2,
-            tp3: draft.tp3,
-            confidence: draft.confidence,
-            timeframe: draft.timeframe,
-            status: "active",
-            rr_ratio: draft.rr_ratio,
-            engine_version: "v1.0",
-            activated_at: new Date().toISOString(),
-            reason_summary: draft.reason_summary,
-          })
-          .select()
-          .single()
+            // 2c) Check if there is an active signal for same symbol+timeframe+engine_version
+            const { data: existing } = await supabase
+              .from("signals")
+              .select("id")
+              .eq("symbol_id", sym.id)
+              .eq("timeframe", draft.timeframe)
+              .eq("status", "active")
+              .eq("engine_version", "v1.0")
+              .limit(1)
+              .maybeSingle()
 
-        if (insErr) {
-          console.error(`[cron] Error inserting signal for ${sym.fmp_symbol}:`, insErr)
-          continue
-        }
+            if (existing) {
+              continue // Signal already exists for this timeframe, try next
+            }
 
-        if (inserted) {
-          createdSignals.push(inserted)
-          console.log(`[cron] ✅ Created ${draft.direction} signal for ${sym.fmp_symbol}`)
+            // 2d) Insert new signal
+            const { data: inserted, error: insErr } = await supabase
+              .from("signals")
+              .insert({
+                symbol: sym.fmp_symbol, // Keep for backward compatibility
+                symbol_id: sym.id,
+                direction: draft.direction,
+                type: draft.type,
+                market: sym.asset_class,
+                entry: draft.entry,
+                sl: draft.sl,
+                tp1: draft.tp1,
+                tp2: draft.tp2,
+                tp3: draft.tp3,
+                confidence: draft.confidence,
+                timeframe: draft.timeframe,
+                status: "active",
+                rr_ratio: draft.rr_ratio,
+                engine_version: "v1.0",
+                activated_at: new Date().toISOString(),
+                reason_summary: draft.reason_summary,
+              })
+              .select()
+              .single()
+
+            if (insErr) {
+              console.error(`[cron] Error inserting signal for ${sym.fmp_symbol} ${tf}:`, insErr)
+              continue
+            }
+
+            if (inserted) {
+              createdSignals.push(inserted)
+              console.log(`[cron] ✅ Created ${draft.direction} ${draft.timeframe} signal for ${sym.fmp_symbol}`)
+              break // Found a signal for this symbol, move to next symbol
+            }
+          } catch (tfError: any) {
+            console.error(`[cron] Error processing ${sym.fmp_symbol} ${tf}:`, tfError)
+            continue // Try next timeframe
+          }
         }
       } catch (symbolError: any) {
         console.error(`[cron] Error processing symbol ${sym.fmp_symbol}:`, symbolError)

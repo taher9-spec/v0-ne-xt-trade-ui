@@ -129,22 +129,22 @@ export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calcula
   if (tpProgress.tp1Progress >= 100 && tpProgress.tp2Progress < 100) {
     return {
       message: isLong 
-        ? "🎯 TP1 Hit! Take partial profit - don't be greedy! Secure some gains."
-        : "🎯 TP1 Hit! Take partial profit - don't be greedy! Secure some gains.",
+        ? "TP1 Hit! Take partial profit - don't be greedy! Secure some gains."
+        : "TP1 Hit! Take partial profit - don't be greedy! Secure some gains.",
       type: 'success',
       showPopup: true
     }
   }
   if (tpProgress.tp2Progress >= 100 && tpProgress.tp3Progress < 100) {
     return {
-      message: "🎯 TP2 Hit! Secure some more profit! You're doing great!",
+      message: "TP2 Hit! Secure some more profit! You're doing great!",
       type: 'success',
       showPopup: true
     }
   }
   if (tpProgress.tp3Progress >= 100) {
     return {
-      message: "🎯 Clean shot! All targets hit. Take profit, don't give them back!",
+      message: "Clean shot! All targets hit. Take profit, don't give them back!",
       type: 'success',
       showPopup: true
     }
@@ -162,8 +162,8 @@ export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calcula
     if (distanceToSL < 20 && distanceToSL > 0) {
       return {
         message: isLong
-          ? "⚠️ Stop Loss approaching! Manage your risk - markets don't go straight up to make you money."
-          : "⚠️ Stop Loss approaching! Manage your risk - markets don't go straight down to make you money.",
+          ? "Stop Loss approaching! Manage your risk - markets don't go straight up to make you money."
+          : "Stop Loss approaching! Manage your risk - markets don't go straight down to make you money.",
         type: 'warning',
         showPopup: true
       }
@@ -174,15 +174,15 @@ export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calcula
   if (currentR < -0.5) {
     return {
       message: isLong
-        ? "⚠️ Manage your risk! Markets don't go straight up to make you money. Consider your position size."
-        : "⚠️ Manage your risk! Markets don't go straight down to make you money. Consider your position size.",
+        ? "Manage your risk! Markets don't go straight up to make you money. Consider your position size."
+        : "Manage your risk! Markets don't go straight down to make you money. Consider your position size.",
       type: 'warning'
     }
   }
   
   if (currentR > 2 && currentPercent > 5) {
     return {
-      message: "💡 Great move! But remember - this is not financial advice. Take profits when you can!",
+      message: "Great move! But remember - this is not financial advice. Take profits when you can!",
       type: 'info'
     }
   }
@@ -191,8 +191,8 @@ export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calcula
   if (currentR > 0 && currentR < 1) {
     return {
       message: isLong
-        ? "📈 You're in profit! We help with professional analysis, but we can't snipe every low and high."
-        : "📉 You're in profit! We help with professional analysis, but we can't snipe every high and low.",
+        ? "You're in profit! We help with professional analysis, but we can't snipe every low and high."
+        : "You're in profit! We help with professional analysis, but we can't snipe every high and low.",
       type: 'info'
     }
   }
@@ -213,8 +213,8 @@ export function getLiquidationMessage(trade: any): {
     const isLong = direction === 'long'
     return {
       message: isLong
-        ? "💔 Stop Loss Hit! Don't cry - it happens to us too! We learned to manage risk, so do it. Markets don't always go up."
-        : "💔 Stop Loss Hit! Don't cry - it happens to us too! We learned to manage risk, so do it. Markets don't always go down.",
+        ? "Stop Loss Hit! Don't cry - it happens to us too! We learned to manage risk, so do it. Markets don't always go up."
+        : "Stop Loss Hit! Don't cry - it happens to us too! We learned to manage risk, so do it. Markets don't always go down.",
       type: 'error',
       showPopup: true
     }

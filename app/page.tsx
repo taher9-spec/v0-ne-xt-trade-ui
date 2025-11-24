@@ -460,45 +460,65 @@ export default function NextTradeUI() {
       }
 
       setLoading(true)
+      
       try {
         const res = await fetch("/api/trades/take", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ signalId: signal.id }),
         })
-        
+
         const data = await res.json()
-        
-        if (res.ok) {
+
+        if (!res.ok) {
+          // Handle specific error cases
+          if (res.status === 401) {
+            setActiveTab("account")
+            return
+          }
+          
+          if (res.status === 400 && (
+            data.error === "You already took this signal" || 
+            data.error?.includes("already") || 
+            data.error?.includes("duplicate")
+          )) {
+            setTaken(true)
+            return
+          }
+
+          // Show clean error message (never expose internal details)
+          console.error("[v0] Trade creation failed:", res.status, data.error)
+          alert("Could not save this trade. Please try again.")
+          return
+        }
+
+        // Success - trade created
+        if (data.trade) {
           setTaken(true)
           console.log("[v0] Signal marked as taken:", signal.symbol)
+          
           // Refresh trades list to update Journal immediately
-          const tradesRes = await fetch("/api/trades/list", { 
-            cache: "no-store",
-            headers: {
-              "Cache-Control": "no-cache",
+          try {
+            const tradesRes = await fetch("/api/trades/list", { 
+              cache: "no-store",
+              headers: {
+                "Cache-Control": "no-cache",
+              }
+            })
+            if (tradesRes.ok) {
+              const tradesData = await tradesRes.json()
+              setTrades(tradesData.trades ?? [])
+              setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
             }
-          })
-          if (tradesRes.ok) {
-            const tradesData = await tradesRes.json()
-            setTrades(tradesData.trades ?? [])
-            setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
-          }
-        } else if (res.status === 401) {
-          setActiveTab("account")
-        } else {
-          // Handle various error cases
-          if (data.error === "You already took this signal" || 
-              data.error?.includes("already") || 
-              data.error?.includes("duplicate")) {
-            setTaken(true)
-          } else {
-            alert(data.error || "Failed to save trade. Please try again.")
+          } catch (refreshError) {
+            console.error("[v0] Failed to refresh trades:", refreshError)
+            // Non-critical - trade was created successfully
           }
         }
-      } catch (e) {
-        console.error("[v0] Failed to mark trade taken", e)
-        alert("Failed to save trade. Please try again.")
+      } catch (e: any) {
+        // Log error but show clean message to user
+        console.error("[v0] Trade creation exception:", e)
+        alert("Could not save this trade. Please try again.")
       } finally {
         setLoading(false)
       }

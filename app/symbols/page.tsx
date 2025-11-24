@@ -221,41 +221,47 @@ export default function SymbolsPage() {
           })
         }
 
-        // Fetch prices for all symbols in parallel
-        const pricePromises = symbols.map(async (symbol) => {
-          try {
-            const res = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol.fmp_symbol)}`, {
-              cache: "no-store",
-              headers: { "Cache-Control": "no-cache" },
-            })
-            if (res.ok) {
-              const data = await res.json()
-              return {
-                symbolId: symbol.id,
-                price: data.price ? parseFloat(String(data.price)) : null,
-                changePercent: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
-                changeDollar: data.change ? parseFloat(String(data.change)) : null,
-                timestamp: data.timestamp || new Date().toISOString(),
-              }
-            }
-          } catch (e) {
-            console.error(`[symbols] Failed to fetch price for ${symbol.fmp_symbol}:`, e)
-          }
-          return { symbolId: symbol.id, price: null, changePercent: null, changeDollar: null, timestamp: null }
-        })
+        // Fetch prices from live_prices table (much faster than individual API calls)
+        const fmpSymbols = symbols.map(s => s.fmp_symbol)
+        const { data: livePricesData, error: pricesError } = await supabase
+          .from("live_prices")
+          .select("fmp_symbol, symbol, price, change, change_percent, volume, updated_at")
+          .in("fmp_symbol", fmpSymbols)
 
-        const priceResults = await Promise.all(pricePromises)
-        const priceMap = new Map(
-          priceResults.map((r) => [
-            r.symbolId,
-            { price: r.price, changePercent: r.changePercent, changeDollar: r.changeDollar, timestamp: r.timestamp },
-          ])
-        )
+        if (pricesError) {
+          console.error("[symbols] Error fetching live prices:", pricesError)
+        }
+
+        // Create a map of fmp_symbol -> price data
+        const priceMap = new Map<string, { 
+          price: number | null; 
+          changePercent: number | null; 
+          changeDollar: number | null; 
+          timestamp: string | null;
+          volume: number | null;
+        }>()
+        
+        if (livePricesData) {
+          livePricesData.forEach((lp: any) => {
+            priceMap.set(lp.fmp_symbol, {
+              price: lp.price ? parseFloat(String(lp.price)) : null,
+              changePercent: lp.change_percent ? parseFloat(String(lp.change_percent)) : null,
+              changeDollar: lp.change ? parseFloat(String(lp.change)) : null,
+              timestamp: lp.updated_at,
+              volume: lp.volume ? parseInt(String(lp.volume)) : null,
+            })
+          })
+        }
 
         // Combine symbols with prices and signals
         const symbolsWithData: SymbolWithPrice[] = symbols.map((symbol) => {
-          const priceData =
-            priceMap.get(symbol.id) || { price: null, changePercent: null, changeDollar: null, timestamp: null }
+          const priceData = priceMap.get(symbol.fmp_symbol) || { 
+            price: null, 
+            changePercent: null, 
+            changeDollar: null, 
+            timestamp: null,
+            volume: null 
+          }
           const activeSignal = signalMap.get(symbol.id) || null
           const signalCount = signalCountMap.get(symbol.id) || 0
 
@@ -270,45 +276,57 @@ export default function SymbolsPage() {
             directionStats: directionMap.get(symbol.id) || { long: 0, short: 0 },
             // Calculate volatility from price change (0-100 scale)
             volatility: priceData.changePercent !== null ? Math.min(100, Math.abs(priceData.changePercent) * 20) : 0,
-            volume: null, // Can be added from API later
+            volume: priceData.volume,
           }
         })
 
         setSymbolsWithData(symbolsWithData)
 
-        // Refresh prices every 30 seconds
-        const interval = setInterval(() => {
-          symbols.forEach(async (symbol) => {
-            try {
-              const res = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol.fmp_symbol)}`, {
-                cache: "no-store",
-                headers: { "Cache-Control": "no-cache" },
+        // Refresh prices every 10 seconds from live_prices table
+        const interval = setInterval(async () => {
+          try {
+            const fmpSymbols = symbols.map(s => s.fmp_symbol)
+            const { data: livePricesData } = await supabase
+              .from("live_prices")
+              .select("fmp_symbol, symbol, price, change, change_percent, volume, updated_at")
+              .in("fmp_symbol", fmpSymbols)
+
+            if (livePricesData) {
+              const newPriceMap = new Map<string, any>()
+              livePricesData.forEach((lp: any) => {
+                newPriceMap.set(lp.fmp_symbol, {
+                  price: lp.price ? parseFloat(String(lp.price)) : null,
+                  changePercent: lp.change_percent ? parseFloat(String(lp.change_percent)) : null,
+                  changeDollar: lp.change ? parseFloat(String(lp.change)) : null,
+                  timestamp: lp.updated_at,
+                  volume: lp.volume ? parseInt(String(lp.volume)) : null,
+                })
               })
-              if (res.ok) {
-                const data = await res.json()
-                setSymbolsWithData((prev) =>
-                  prev.map((s) =>
-                    s.id === symbol.id
-                      ? {
-                          ...s,
-                          currentPrice: data.price ? parseFloat(String(data.price)) : null,
-                          priceChangePercent: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
-                          priceChangeDollar: data.change ? parseFloat(String(data.change)) : null,
-                          lastPriceUpdate: data.timestamp || new Date().toISOString(),
-                          volatility:
-                            data.changesPercentage !== null
-                              ? Math.min(100, Math.abs(parseFloat(String(data.changesPercentage))) * 20)
-                              : 0,
-                        }
-                      : s
-                  )
-                )
-              }
-            } catch (e) {
-              // Silent fail for price updates
+
+              setSymbolsWithData((prev) =>
+                prev.map((s) => {
+                  const priceData = newPriceMap.get(s.fmp_symbol)
+                  if (priceData) {
+                    return {
+                      ...s,
+                      currentPrice: priceData.price,
+                      priceChangePercent: priceData.changePercent,
+                      priceChangeDollar: priceData.changeDollar,
+                      lastPriceUpdate: priceData.timestamp,
+                      volatility: priceData.changePercent !== null 
+                        ? Math.min(100, Math.abs(priceData.changePercent) * 20) 
+                        : s.volatility,
+                      volume: priceData.volume,
+                    }
+                  }
+                  return s
+                })
+              )
             }
-          })
-        }, 30000)
+          } catch (e) {
+            // Silent fail for price updates
+          }
+        }, 10000)
 
         return () => clearInterval(interval)
       } catch (e: any) {

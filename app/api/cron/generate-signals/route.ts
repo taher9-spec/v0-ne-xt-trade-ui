@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { supabaseServer } from "@/lib/supabaseServer"
-import { getAllSymbols } from "@/lib/symbols"
+import { createSupabaseClient } from "@/lib/supabase/client"
+import { getAllSymbols } from "@/lib/supabase/symbols"
 import { fetchFmpDataForSymbol, buildSignalFromFmp } from "@/lib/signals/engine"
 
 /**
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const supabase = supabaseServer()
+    const supabase = createSupabaseClient()
 
     // 1) Get all active symbols
     const symbols = await getAllSymbols()

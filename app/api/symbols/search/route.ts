@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
 import { searchFmpSymbols, determineAssetClass } from "@/lib/fmp"
-import { getSymbolByFmpSymbol } from "@/lib/symbols"
 
 export async function GET(req: NextRequest) {
   try {

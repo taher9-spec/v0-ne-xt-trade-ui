@@ -4,7 +4,7 @@ import { supabaseServer } from "@/lib/supabaseServer"
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const cookieStore = await cookies()
@@ -15,7 +15,7 @@ export async function POST(
     }
 
     const { notes } = await req.json()
-    const tradeId = params.id
+    const { id: tradeId } = await params
 
     const supabase = supabaseServer()
 

@@ -54,12 +54,28 @@ export function calculateTPProgress(trade: any, currentPrice: number): {
     
     const progress = entryToTarget > 0 ? Math.min(100, Math.max(0, (entryToCurrent / entryToTarget) * 100)) : 0
     
-    // For forex, calculate pips (assuming 4-5 decimal places)
-    const isForex = entry.toString().includes('.') && entry.toString().split('.')[1]?.length >= 4
+    // Calculate pips based on asset class and price format
+    const entryStr = entry.toString()
+    const hasDecimal = entryStr.includes('.')
+    const decimalPlaces = hasDecimal ? entryStr.split('.')[1]?.length || 0 : 0
+    
+    let pips = 0
     const priceDiff = direction === 1 ? (currentPrice - entry) : (entry - currentPrice)
-    const pips = isForex 
-      ? Math.abs(priceDiff * 10000)
-      : Math.abs(priceDiff)
+    
+    // Forex: 4-5 decimal places = pips (1 pip = 0.0001 for most pairs, 0.01 for JPY pairs)
+    if (decimalPlaces >= 4) {
+      // Most forex pairs: 1 pip = 0.0001
+      pips = Math.abs(priceDiff * 10000)
+      // JPY pairs (like USDJPY) have 2-3 decimal places, but we check for 4+ so this is correct
+    } 
+    // Crypto/Stocks: Use price difference directly (no pips concept, but show as "points")
+    else if (decimalPlaces <= 2) {
+      pips = Math.abs(priceDiff)
+    }
+    // Commodities: Usually 2-3 decimal places
+    else {
+      pips = Math.abs(priceDiff * 100) // For commodities like gold (2 decimal places)
+    }
     
     const percent = ((currentPrice - entry) / entry) * 100 * direction
     
@@ -99,25 +115,29 @@ export function calculateTPProgress(trade: any, currentPrice: number): {
  */
 export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calculateTPProgress>): {
   message: string
-  type: 'success' | 'warning' | 'info'
+  type: 'success' | 'warning' | 'info' | 'error'
   showPopup?: boolean
 } | null {
   if (trade.status !== 'open') return null
   
   const currentR = trade.floating_r || 0
   const currentPercent = trade.floating_pnl_percent || 0
+  const direction = trade.direction?.toLowerCase() || 'long'
+  const isLong = direction === 'long'
   
   // TP hit messages - these should show as popups
   if (tpProgress.tp1Progress >= 100 && tpProgress.tp2Progress < 100) {
     return {
-      message: "🎯 TP1 Hit! Take partial profit - don't be greedy!",
+      message: isLong 
+        ? "🎯 TP1 Hit! Take partial profit - don't be greedy! Secure some gains."
+        : "🎯 TP1 Hit! Take partial profit - don't be greedy! Secure some gains.",
       type: 'success',
       showPopup: true
     }
   }
   if (tpProgress.tp2Progress >= 100 && tpProgress.tp3Progress < 100) {
     return {
-      message: "🎯 TP2 Hit! Secure some more profit!",
+      message: "🎯 TP2 Hit! Secure some more profit! You're doing great!",
       type: 'success',
       showPopup: true
     }
@@ -130,10 +150,32 @@ export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calcula
     }
   }
   
+  // Stop Loss approaching warnings
+  const entry = trade.entry_price || 0
+  const sl = trade.sl || 0
+  const currentPrice = trade.current_price || entry
+  if (sl > 0 && entry > 0) {
+    const distanceToSL = isLong 
+      ? ((currentPrice - sl) / (entry - sl)) * 100
+      : ((sl - currentPrice) / (sl - entry)) * 100
+    
+    if (distanceToSL < 20 && distanceToSL > 0) {
+      return {
+        message: isLong
+          ? "⚠️ Stop Loss approaching! Manage your risk - markets don't go straight up to make you money."
+          : "⚠️ Stop Loss approaching! Manage your risk - markets don't go straight down to make you money.",
+        type: 'warning',
+        showPopup: true
+      }
+    }
+  }
+  
   // Risk management messages
   if (currentR < -0.5) {
     return {
-      message: "⚠️ Manage your risk! Markets don't go straight up to make you money.",
+      message: isLong
+        ? "⚠️ Manage your risk! Markets don't go straight up to make you money. Consider your position size."
+        : "⚠️ Manage your risk! Markets don't go straight down to make you money. Consider your position size.",
       type: 'warning'
     }
   }
@@ -148,7 +190,9 @@ export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calcula
   // General encouragement
   if (currentR > 0 && currentR < 1) {
     return {
-      message: "📈 You're in profit! We help with professional analysis, but we can't snipe every low and high.",
+      message: isLong
+        ? "📈 You're in profit! We help with professional analysis, but we can't snipe every low and high."
+        : "📉 You're in profit! We help with professional analysis, but we can't snipe every high and low.",
       type: 'info'
     }
   }
@@ -159,9 +203,21 @@ export function getTradeAdvice(trade: any, tpProgress: ReturnType<typeof calcula
 /**
  * Get liquidation warning message
  */
-export function getLiquidationMessage(trade: any): string | null {
+export function getLiquidationMessage(trade: any): {
+  message: string
+  type: 'warning' | 'error'
+  showPopup?: boolean
+} | null {
   if (trade.status === 'sl_hit') {
-    return "💔 Got liquidated? Don't cry - it happens to us too! We learned to manage risk, so do it."
+    const direction = trade.direction?.toLowerCase() || 'long'
+    const isLong = direction === 'long'
+    return {
+      message: isLong
+        ? "💔 Stop Loss Hit! Don't cry - it happens to us too! We learned to manage risk, so do it. Markets don't always go up."
+        : "💔 Stop Loss Hit! Don't cry - it happens to us too! We learned to manage risk, so do it. Markets don't always go down.",
+      type: 'error',
+      showPopup: true
+    }
   }
   return null
 }

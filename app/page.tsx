@@ -72,6 +72,7 @@ export default function NextTradeUI() {
   const [signals, setSignals] = useState<Signal[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
+  const [signalSortBy, setSignalSortBy] = useState<"recent" | "timeframe" | "confidence">("recent")
   const [tradeStats, setTradeStats] = useState<TradeStats>({ total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
   const [loadingSignals, setLoadingSignals] = useState(true)
   const [loadingTrades, setLoadingTrades] = useState(false)
@@ -447,14 +448,66 @@ export default function NextTradeUI() {
           </Card>
         ) : (
           <div className="space-y-3">
+            {/* Sort options */}
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setSignalSortBy("recent")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  signalSortBy === "recent"
+                    ? "bg-emerald-500 text-black"
+                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                Recent
+              </button>
+              <button
+                onClick={() => setSignalSortBy("timeframe")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  signalSortBy === "timeframe"
+                    ? "bg-emerald-500 text-black"
+                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                Timeframe
+              </button>
+              <button
+                onClick={() => setSignalSortBy("confidence")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  signalSortBy === "confidence"
+                    ? "bg-emerald-500 text-black"
+                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                Confidence
+              </button>
+            </div>
+            
             {(() => {
-              // Sort signals: unlocked first, then locked
+              // Sort signals: unlocked first, then by sort option
               const planCode = user?.plan_code || null
               const sortedSignals = [...signals].sort((a, b) => {
                 const aUnlocked = isSymbolUnlocked(a.symbol, planCode)
                 const bUnlocked = isSymbolUnlocked(b.symbol, planCode)
-                if (aUnlocked === bUnlocked) return 0
-                return aUnlocked ? -1 : 1
+                if (aUnlocked !== bUnlocked) {
+                  return aUnlocked ? -1 : 1
+                }
+                
+                // Then sort by selected option
+                if (signalSortBy === "recent") {
+                  const aTime = new Date(a.activated_at || a.created_at || 0).getTime()
+                  const bTime = new Date(b.activated_at || b.created_at || 0).getTime()
+                  return bTime - aTime // Newest first
+                } else if (signalSortBy === "timeframe") {
+                  const timeframeOrder: Record<string, number> = { '5m': 1, '15m': 2, '1h': 3, '4h': 4, '1d': 5, 'scalp': 1, 'intraday': 3, 'swing': 5 }
+                  const aOrder = timeframeOrder[a.timeframe || ''] || 99
+                  const bOrder = timeframeOrder[b.timeframe || ''] || 99
+                  return aOrder - bOrder
+                } else if (signalSortBy === "confidence") {
+                  const aScore = a.signal_score || a.confidence || 0
+                  const bScore = b.signal_score || b.confidence || 0
+                  return bScore - aScore // Highest first
+                }
+                return 0
               })
               
               return sortedSignals.map((signal) => (
@@ -695,7 +748,11 @@ export default function NextTradeUI() {
     const volatilityColor = volatility > 70 ? 'rose' : volatility > 40 ? 'yellow' : 'emerald'
 
     return (
-      <Card className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group">
+      <Card className={`p-5 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
+        direction === "long"
+          ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
+          : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
+      }`}>
         {/* Blur overlay for locked signals */}
         {!symbolUnlocked && (
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-20 rounded-lg flex flex-col items-center justify-center p-4">
@@ -720,17 +777,17 @@ export default function NextTradeUI() {
           </div>
         )}
         
-        {/* Volatility indicator - corner design from top to bottom */}
-        <div className="absolute top-0 right-0 w-1 h-full z-0">
+        {/* Volatility indicator - corner design from top to bottom (bigger and more visible) */}
+        <div className="absolute top-0 right-0 w-2 h-full z-0">
           <div 
             className={`w-full h-full bg-gradient-to-b ${
               volatilityColor === 'rose' 
-                ? 'from-rose-500/60 via-rose-500/40 to-rose-500/20'
+                ? 'from-rose-500/80 via-rose-500/60 to-rose-500/40'
                 : volatilityColor === 'yellow'
-                ? 'from-yellow-500/60 via-yellow-500/40 to-yellow-500/20'
-                : 'from-emerald-500/60 via-emerald-500/40 to-emerald-500/20'
+                ? 'from-yellow-500/80 via-yellow-500/60 to-yellow-500/40'
+                : 'from-emerald-500/80 via-emerald-500/60 to-emerald-500/40'
             }`}
-            style={{ height: `${volatility}%` }}
+            style={{ height: `${Math.max(10, volatility)}%` }}
           />
         </div>
         
@@ -1441,13 +1498,10 @@ export default function NextTradeUI() {
         <Card className="p-4 bg-zinc-950 border-zinc-800">
           <div className="flex items-center gap-3 mb-4">
             {user.photo_url ? (
-              <Image
+              <img
                 src={user.photo_url}
                 alt={user.full_name || user.username || "User"}
-                width={56}
-                height={56}
                 className="w-14 h-14 rounded-full border-2 border-zinc-800 object-cover"
-                unoptimized // Telegram CDN images may not be optimized by Next.js
                 onError={(e) => {
                   // Fallback to placeholder if image fails to load
                   const target = e.target as HTMLImageElement
@@ -1779,11 +1833,39 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const tradeAdvice = trade.status === "open" && tpProgress ? getTradeAdvice(trade, tpProgress) : null
   const liquidationMsg = getLiquidationMessage(trade)
 
+  // Determine sentiment/direction for card background
+  const direction = trade.direction === "long" ? "long" : "short"
+  const sentiment = currentR >= 0 ? "positive" : "negative"
+  
+  // Calculate volatility for indicator
+  const assetClass = (trade as any).symbols?.asset_class || 'forex'
+  const priceChange = trade.status === "open" ? (trade.floating_pnl_percent || 0) : (trade.pnl_percent || 0)
+  const volatility = Math.min(100, Math.abs(priceChange) * 20)
+  const volatilityColor = volatility > 70 ? 'rose' : volatility > 40 ? 'yellow' : 'emerald'
+
   return (
-    <Card className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group">
+    <Card className={`p-5 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
+      direction === "long"
+        ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
+        : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
+    }`}>
+      {/* Volatility indicator - corner design from top to bottom (bigger and more visible) */}
+      <div className="absolute top-0 right-0 w-2 h-full z-0">
+        <div 
+          className={`w-full h-full bg-gradient-to-b ${
+            volatilityColor === 'rose' 
+              ? 'from-rose-500/80 via-rose-500/60 to-rose-500/40'
+              : volatilityColor === 'yellow'
+              ? 'from-yellow-500/80 via-yellow-500/60 to-yellow-500/40'
+              : 'from-emerald-500/80 via-emerald-500/60 to-emerald-500/40'
+          }`}
+          style={{ height: `${Math.max(10, volatility)}%` }}
+        />
+      </div>
+      
       {/* Background gradient based on performance */}
-      <div className={`absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity ${
-        currentR >= 0
+      <div className={`absolute inset-0 opacity-10 group-hover:opacity-15 transition-opacity ${
+        sentiment === "positive"
           ? "bg-gradient-to-br from-emerald-500/20 via-emerald-400/10 to-transparent"
           : "bg-gradient-to-br from-rose-500/20 via-rose-400/10 to-transparent"
       }`} />
@@ -1809,20 +1891,8 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
           })()}
           <div>
             <h3 className="text-lg font-bold">{trade.symbol}</h3>
-            {/* Integrated direction and timeframe as part of card design */}
+            {/* Timeframe and status only - direction shown via card background */}
             <div className="flex items-center gap-1.5 mt-0.5">
-              <div className={`h-4 px-1.5 rounded text-[9px] font-bold flex items-center gap-0.5 ${
-                trade.direction === "long"
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : "bg-rose-500/20 text-rose-400"
-              }`}>
-                {trade.direction === "long" ? (
-                  <TrendingUp className="w-2.5 h-2.5" />
-                ) : (
-                  <TrendingDown className="w-2.5 h-2.5" />
-                )}
-                <span>{trade.direction.toUpperCase()}</span>
-              </div>
               {timeframe && timeframe !== "N/A" && (
                 <div className="h-4 px-1.5 rounded text-[9px] bg-zinc-800/50 text-zinc-400 border border-zinc-700/50">
                   {timeframe}
@@ -1850,15 +1920,15 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
         <div className="space-y-2">
           <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
-            <p className="text-base font-bold">{formatNumber(trade.entry_price, 2, "N/A")}</p>
+            <p className="text-base font-bold">{formatNumber(trade.entry_price, assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2, "N/A")}</p>
           </div>
           <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
-            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, 2, "N/A")}</p>
+            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2, "N/A")}</p>
           </div>
           <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-1">Target</p>
-            <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, 2, "N/A")}</p>
+            <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2, "N/A")}</p>
           </div>
         </div>
 
@@ -1891,7 +1961,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
                 <span>TP1</span>
-                <span>{tpProgress.tp1Progress.toFixed(0)}% • {tpProgress.tp1Pips.toFixed(1)} pips</span>
+                <span>{tpProgress.tp1Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp1Pips.toFixed(1)} pips` : `${tpProgress.tp1Pips.toFixed(2)} pts`}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -1907,7 +1977,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
                 <span>TP2</span>
-                <span>{tpProgress.tp2Progress.toFixed(0)}% • {tpProgress.tp2Pips.toFixed(1)} pips</span>
+                <span>{tpProgress.tp2Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp2Pips.toFixed(1)} pips` : `${tpProgress.tp2Pips.toFixed(2)} pts`}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -1923,7 +1993,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
             <div>
               <div className="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
                 <span>TP3</span>
-                <span>{tpProgress.tp3Progress.toFixed(0)}% • {tpProgress.tp3Pips.toFixed(1)} pips</span>
+                <span>{tpProgress.tp3Progress.toFixed(0)}% • {assetClass === 'forex' ? `${tpProgress.tp3Pips.toFixed(1)} pips` : `${tpProgress.tp3Pips.toFixed(2)} pts`}</span>
               </div>
               <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
                 <div 
@@ -1961,10 +2031,18 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
       )}
       
       {liquidationMsg && (
-        <div className="mb-3 p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 relative z-10">
-          <p className="text-xs text-rose-300 flex items-center gap-1.5">
+        <div className={`mb-3 p-2.5 rounded-lg border relative z-10 ${
+          liquidationMsg.type === 'error'
+            ? 'bg-rose-500/10 border-rose-500/30'
+            : 'bg-yellow-500/10 border-yellow-500/30'
+        }`}>
+          <p className={`text-xs flex items-center gap-1.5 ${
+            liquidationMsg.type === 'error'
+              ? 'text-rose-300'
+              : 'text-yellow-300'
+          }`}>
             <AlertCircle className="w-3.5 h-3.5" />
-            {liquidationMsg}
+            {liquidationMsg.message}
           </p>
         </div>
       )}

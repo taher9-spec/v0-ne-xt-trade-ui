@@ -109,17 +109,24 @@ export async function getUserTrades(userId: string, limit: number = 50): Promise
       }
     })
 
-    // Calculate stats
+    // Calculate stats - properly synced
     const total = allTrades.length
-    const closedTrades = allTrades.filter((t) => t.status !== "open")
+    const closedTrades = allTrades.filter((t) => t.status !== "open" && t.status !== "expired")
+    
+    // Wins: closed trades with positive result_r OR tp_hit status
     const wins = closedTrades.filter((t) => {
+      if (t.status === "tp_hit") return true
       const r = t.result_r
       return r !== null && r !== undefined && r > 0
     }).length
+    
+    // Losses: closed trades with negative result_r OR sl_hit status
     const losses = closedTrades.filter((t) => {
+      if (t.status === "sl_hit") return true
       const r = t.result_r
       return r !== null && r !== undefined && r < 0
     }).length
+    
     const open = allTrades.filter((t) => t.status === "open").length
     const winRate = closedTrades.length > 0 ? (wins / closedTrades.length) * 100 : 0
 

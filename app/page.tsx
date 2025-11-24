@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
-import { getRealTimeQuotes, getHistoricalData } from "./actions"
-import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts"
+// Removed unused imports for market overview
 import { TelegramLoginButton } from "@/components/TelegramLoginButton"
 import { LogOut, Check } from "lucide-react"
 import Image from "next/image"
@@ -77,9 +76,7 @@ export default function NextTradeUI() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
 
-  const [quotes, setQuotes] = useState<any[]>([])
-  const [chartData, setChartData] = useState<any[]>([])
-  const [selectedSymbol, setSelectedSymbol] = useState("BTCUSD")
+  // Removed quotes, chartData, selectedSymbol - no longer needed
 
   useEffect(() => {
     const fetchSignals = async () => {
@@ -120,67 +117,33 @@ export default function NextTradeUI() {
     return () => clearInterval(interval)
   }, [])
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch market overview from API (uses DB symbols + FMP prices)
-        const overviewRes = await fetch("/api/market/overview", { cache: "no-store" })
-        if (overviewRes.ok) {
-          const { quotes } = await overviewRes.json()
-          if (quotes && quotes.length > 0) {
-            // Map to format expected by existing UI
-            const mappedQuotes = quotes.map((q: any) => ({
-              symbol: q.symbol,
-              name: q.name || q.displaySymbol,
-              price: q.price,
-              changesPercentage: q.changesPercentage || 0,
-              change: q.change || 0,
-              dayLow: q.dayLow || q.price * 0.99,
-              dayHigh: q.dayHigh || q.price * 1.01,
-              previousClose: q.previousClose || q.price,
-              timestamp: q.timestamp || Date.now() / 1000,
-            }))
-            setQuotes(mappedQuotes)
-            return
-          }
-        }
-        // Fallback to default symbols if API fails
-        const data = await getRealTimeQuotes(["BTCUSD", "ETHUSD", "AAPL", "NVDA", "TSLA"])
-        setQuotes(data)
-      } catch (e) {
-        console.error("[v0] Failed to fetch market overview:", e)
-        // Fallback
-        const data = await getRealTimeQuotes(["BTCUSD", "ETHUSD", "AAPL", "NVDA", "TSLA"])
-        setQuotes(data)
-      }
-    }
-    fetchData()
-
-    const interval = setInterval(fetchData, 30000) // Poll every 30 seconds
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    const fetchChart = async () => {
-      const data = await getHistoricalData(selectedSymbol)
-      setChartData(data)
-    }
-    fetchChart()
-  }, [selectedSymbol])
+  // Removed market overview and chart data fetching - no longer needed
 
   useEffect(() => {
     if (activeTab === "journal") {
       const fetchTrades = async () => {
+        if (!user) {
+          setTrades([])
+          setTradeStats({ total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
+          setLoadingTrades(false)
+          return
+        }
+
         setLoadingTrades(true)
         try {
-          const res = await fetch("/api/trades/list", { cache: "no-store" })
+          const res = await fetch("/api/trades/list", { 
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+            }
+          })
           if (!res.ok) {
             const errorText = await res.text()
             console.error("[v0] Trades API error:", res.status, errorText)
             throw new Error(`Failed to fetch trades: ${res.status}`)
           }
           const json = await res.json()
-          console.log("[v0] Fetched trades:", json)
+          console.log("[v0] Fetched trades:", json.trades?.length || 0, "trades, stats:", json.stats)
           setTrades(json.trades ?? [])
           setTradeStats(json.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
         } catch (e: any) {
@@ -193,12 +156,12 @@ export default function NextTradeUI() {
       }
       fetchTrades()
 
-      // Poll for live PnL updates every 15 seconds when Journal tab is active
+      // Poll for live PnL updates every 10 seconds when Journal tab is active and user is logged in
       const interval = setInterval(() => {
         if (activeTab === "journal" && user) {
           fetchTrades()
         }
-      }, 15000) // 15 seconds
+      }, 10000) // 10 seconds for more responsive updates
 
       return () => clearInterval(interval)
     }
@@ -365,7 +328,7 @@ export default function NextTradeUI() {
     }
   }, [user]) // Only run if user is not already authenticated
 
-  const mainQuote = quotes.find((q) => q.symbol === selectedSymbol) || { price: 0, changesPercentage: 0 }
+  // Removed mainQuote - no longer needed
 
   const HomeSignals = () => (
     <div className="space-y-6 pb-20">
@@ -396,96 +359,6 @@ export default function NextTradeUI() {
 
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-zinc-400">Market Overview</h2>
-          <Link href="/signals">
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-zinc-500">
-              View All
-            </Button>
-          </Link>
-        </div>
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-          {quotes.map((quote) => (
-            <Card
-              key={quote.symbol}
-              className={`min-w-[140px] p-3 bg-zinc-950 border-zinc-800 cursor-pointer transition-colors ${
-                selectedSymbol === quote.symbol ? "border-emerald-500/50" : ""
-              }`}
-              onClick={() => setSelectedSymbol(quote.symbol)}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-medium text-zinc-400">{quote.symbol}</p>
-                <Badge
-                  variant="outline"
-                  className={`h-5 text-[10px] ${
-                    quote.changesPercentage >= 0
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                      : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                  }`}
-                >
-                  {quote.changesPercentage >= 0 ? "+" : ""}
-                  {quote.changesPercentage.toFixed(2)}%
-                </Badge>
-              </div>
-              <p className="text-lg font-bold">${quote.price.toLocaleString()}</p>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <Card className="p-4 bg-zinc-950 border-zinc-800">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <p className="text-xs text-zinc-500">Selected Asset</p>
-              <p className="text-2xl font-bold">{selectedSymbol}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-zinc-500">Current Price</p>
-              <p className="text-2xl font-bold">${mainQuote.price.toLocaleString()}</p>
-              <Badge
-                variant="outline"
-                className={`h-5 text-[10px] mt-1 ${
-                  mainQuote.changesPercentage >= 0
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                    : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                }`}
-              >
-                {mainQuote.changesPercentage >= 0 ? "+" : ""}
-                {mainQuote.changesPercentage.toFixed(2)}%
-              </Badge>
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={120}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop
-                    offset="5%"
-                    stopColor={mainQuote.changesPercentage >= 0 ? "#10b981" : "#f43f5e"}
-                    stopOpacity={0.3}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor={mainQuote.changesPercentage >= 0 ? "#10b981" : "#f43f5e"}
-                    stopOpacity={0}
-                  />
-                </linearGradient>
-              </defs>
-              <YAxis domain={["auto", "auto"]} hide />
-              <Area
-                type="monotone"
-                dataKey="close"
-                stroke={mainQuote.changesPercentage >= 0 ? "#10b981" : "#f43f5e"}
-                strokeWidth={2}
-                fill="url(#priceGradient)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
-      </section>
-
-      <section>
-        <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-zinc-400">
             {signals.length > 0 ? `Today's Signals: ${signals.length} active` : "Today's Signals"}
           </h2>
@@ -510,18 +383,9 @@ export default function NextTradeUI() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {/* Render the first signal in big card layout */}
-            {signals.length > 0 && (
-              <SignalCard key={signals[0].id} signal={signals[0]} />
-            )}
-            {/* Optionally show more signals below */}
-            {signals.length > 1 && (
-              <div className="space-y-3">
-                {signals.slice(1).map((signal) => (
-                  <SignalCard key={signal.id} signal={signal} />
-                ))}
-              </div>
-            )}
+            {signals.map((signal) => (
+              <SignalCard key={signal.id} signal={signal} />
+            ))}
           </div>
         )}
       </section>
@@ -533,37 +397,65 @@ export default function NextTradeUI() {
     const [loading, setLoading] = useState(false)
     const [checkingTrade, setCheckingTrade] = useState(true)
 
-    // Check if user already has an open trade for this signal
+    // Check if user already has a trade for this signal (prevent duplicates)
     useEffect(() => {
       if (!user || !signal.id) {
         setCheckingTrade(false)
+        setTaken(false)
         return
       }
 
-      const checkExistingTrade = async () => {
+      // Use the existing trades state if available, otherwise fetch
+      const checkExistingTrade = () => {
         try {
-          const res = await fetch("/api/trades/list", { cache: "no-store" })
-          if (res.ok) {
-            const data = await res.json()
-            const hasOpenTrade = (data.trades || []).some(
-              (t: Trade) => t.signal_id === signal.id && t.status === "open"
+          // First check if we already have trades loaded
+          if (trades.length > 0) {
+            const hasTrade = trades.some(
+              (t: Trade) => t.signal_id === signal.id
             )
-            setTaken(hasOpenTrade)
+            setTaken(hasTrade)
+            setCheckingTrade(false)
+            return
           }
+
+          // Otherwise fetch trades to check
+          fetch("/api/trades/list", { 
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
+            }
+          })
+            .then((res) => res.json())
+            .then((data) => {
+              const hasTrade = (data.trades || []).some(
+                (t: Trade) => t.signal_id === signal.id
+              )
+              setTaken(hasTrade)
+            })
+            .catch((e) => {
+              console.error("[v0] Failed to check existing trade", e)
+            })
+            .finally(() => {
+              setCheckingTrade(false)
+            })
         } catch (e) {
           console.error("[v0] Failed to check existing trade", e)
-        } finally {
           setCheckingTrade(false)
         }
       }
 
       checkExistingTrade()
-    }, [user, signal.id])
+    }, [user, signal.id, trades.length]) // Include trades.length to re-check when trades update
 
     const handleTakeSignal = async () => {
       if (!user) {
         // Redirect to Account tab and show login
         setActiveTab("account")
+        return
+      }
+
+      // Prevent duplicate requests
+      if (taken || loading) {
         return
       }
 
@@ -574,26 +466,34 @@ export default function NextTradeUI() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ signalId: signal.id }),
         })
+        
+        const data = await res.json()
+        
         if (res.ok) {
           setTaken(true)
           console.log("[v0] Signal marked as taken:", signal.symbol)
-          // Refresh trades list to update Journal
-          if (activeTab === "journal") {
-            const tradesRes = await fetch("/api/trades/list", { cache: "no-store" })
-            if (tradesRes.ok) {
-              const tradesData = await tradesRes.json()
-              setTrades(tradesData.trades ?? [])
-              setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
+          // Refresh trades list to update Journal immediately
+          const tradesRes = await fetch("/api/trades/list", { 
+            cache: "no-store",
+            headers: {
+              "Cache-Control": "no-cache",
             }
+          })
+          if (tradesRes.ok) {
+            const tradesData = await tradesRes.json()
+            setTrades(tradesData.trades ?? [])
+            setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
           }
         } else if (res.status === 401) {
           setActiveTab("account")
         } else {
-          const errorData = await res.json().catch(() => ({}))
-          if (errorData.error === "You already took this signal") {
+          // Handle various error cases
+          if (data.error === "You already took this signal" || 
+              data.error?.includes("already") || 
+              data.error?.includes("duplicate")) {
             setTaken(true)
           } else {
-            alert(errorData.error || "Failed to save trade. Please try again.")
+            alert(data.error || "Failed to save trade. Please try again.")
           }
         }
       } catch (e) {
@@ -720,54 +620,96 @@ export default function NextTradeUI() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {trades.map((trade) => (
-              <Card key={trade.id} className="p-4 bg-zinc-950 border-zinc-800">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-base font-bold">{trade.symbol}</h3>
-                      <Badge
-                        variant="outline"
-                        className={`h-5 text-[10px] ${
-                          trade.direction === "long"
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                            : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                        }`}
-                      >
-                        {trade.direction.toUpperCase()}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={`h-5 text-[10px] ${
-                          trade.status === "open"
-                            ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
-                            : "border-zinc-700 text-zinc-400"
-                        }`}
-                      >
-                        {trade.status}
-                      </Badge>
+            {trades.map((trade) => {
+              // Determine if TP1 or SL was hit
+              const isTpHit = trade.status === "tp_hit"
+              const isSlHit = trade.status === "sl_hit"
+              const closePrice = trade.close_price || trade.exit_price
+              const closedAt = trade.closed_at
+
+              // Format close time
+              const formatCloseTime = (dateString: string | null | undefined) => {
+                if (!dateString) return ""
+                try {
+                  const date = new Date(dateString)
+                  const now = new Date()
+                  const diffMs = now.getTime() - date.getTime()
+                  const diffMins = Math.floor(diffMs / 60000)
+                  const diffHours = Math.floor(diffMs / 3600000)
+                  const diffDays = Math.floor(diffMs / 86400000)
+
+                  if (diffMins < 1) return "Just now"
+                  if (diffMins < 60) return `${diffMins}m ago`
+                  if (diffHours < 24) return `${diffHours}h ago`
+                  if (diffDays < 7) return `${diffDays}d ago`
+                  return date.toLocaleDateString()
+                } catch {
+                  return ""
+                }
+              }
+
+              return (
+                <Card key={trade.id} className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold">{trade.symbol}</h3>
+                        <Badge
+                          variant="outline"
+                          className={`h-5 text-[10px] ${
+                            trade.direction === "long"
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                              : "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                          }`}
+                        >
+                          {trade.direction.toUpperCase()}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={`h-5 text-[10px] ${
+                            trade.status === "open"
+                              ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
+                              : isTpHit
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                              : isSlHit
+                              ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                              : "border-zinc-700 text-zinc-400"
+                          }`}
+                        >
+                          {trade.status === "open" ? "OPEN" : trade.status === "tp_hit" ? "TP HIT" : trade.status === "sl_hit" ? "SL HIT" : trade.status.toUpperCase()}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-zinc-500 mb-1">
+                        Entry: {formatNumber(trade.entry_price, 2, "N/A")}
+                        {closePrice !== null && closePrice !== undefined && ` • Close: ${formatNumber(closePrice, 2)}`}
+                      </p>
+                      {/* Show TP/SL hit information */}
+                      {isTpHit && closePrice && (
+                        <p className="text-xs text-emerald-400 font-medium">
+                          ✅ TP1 hit at {formatNumber(closePrice, 2)} • {formatCloseTime(closedAt)}
+                        </p>
+                      )}
+                      {isSlHit && closePrice && (
+                        <p className="text-xs text-rose-400 font-medium">
+                          ❌ SL hit at {formatNumber(closePrice, 2)} • {formatCloseTime(closedAt)}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-xs text-zinc-500">
-                      Entry: {formatNumber(trade.entry_price, 2, "N/A")}
-                      {trade.exit_price !== null && trade.exit_price !== undefined && ` • Exit: ${formatNumber(trade.exit_price)}`}
-                    </p>
-                  </div>
-                  {(trade.result_r !== null || trade.floating_r !== null) && (
-                    <div className={`text-right ${(trade.result_r ?? trade.floating_r ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                    <div className={`text-right ml-3 ${(trade.result_r ?? trade.floating_r ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                       {trade.status === "open" && trade.floating_r !== null && trade.floating_r !== undefined ? (
                         <>
                           <p className="text-lg font-bold">
                             {trade.floating_r > 0 ? "+" : ""}
-                            {formatNumber(trade.floating_r)}R
+                            {formatNumber(trade.floating_r, 2)}R
                           </p>
                           {trade.floating_pnl_percent !== null && trade.floating_pnl_percent !== undefined && (
-                            <p className="text-xs">
+                            <p className="text-sm font-semibold">
                               {trade.floating_pnl_percent > 0 ? "+" : ""}
-                              {formatNumber(trade.floating_pnl_percent)}%
+                              {formatNumber(trade.floating_pnl_percent, 2)}%
                             </p>
                           )}
                           {trade.current_price !== null && trade.current_price !== undefined && (
-                            <p className="text-[10px] text-zinc-500 mt-1">${formatNumber(trade.current_price)}</p>
+                            <p className="text-[10px] text-zinc-500 mt-1">${formatNumber(trade.current_price, 2)}</p>
                           )}
                         </>
                       ) : (
@@ -776,22 +718,22 @@ export default function NextTradeUI() {
                             {trade.result_r !== null && trade.result_r !== undefined && trade.result_r > 0 ? "+" : ""}
                             {formatNumber(trade.result_r, 2, "0.00")}R
                           </p>
-                          {trade.pnl !== null && trade.pnl !== undefined && (
-                            <p className="text-xs">${formatNumber(trade.pnl)}</p>
-                          )}
                           {trade.pnl_percent !== null && trade.pnl_percent !== undefined && (
-                            <p className="text-xs">
+                            <p className="text-sm font-semibold">
                               {trade.pnl_percent > 0 ? "+" : ""}
-                              {formatNumber(trade.pnl_percent)}%
+                              {formatNumber(trade.pnl_percent, 2)}%
                             </p>
+                          )}
+                          {trade.pnl !== null && trade.pnl !== undefined && (
+                            <p className="text-xs text-zinc-400">${formatNumber(trade.pnl, 2)}</p>
                           )}
                         </>
                       )}
                     </div>
-                  )}
-                </div>
-              </Card>
-            ))}
+                  </div>
+                </Card>
+              )
+            })}
           </div>
         )}
       </section>

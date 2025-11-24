@@ -90,10 +90,36 @@ Monitor the cron job execution:
 
 ## Troubleshooting
 
+### 401 Errors
+
 If you still see 401 errors:
 
 1. **Verify anon key is correct**: Check Supabase Dashboard → Settings → API
 2. **Check edge function JWT setting**: Should be `verify_jwt: true`
 3. **Verify cron job is active**: `SELECT * FROM cron.job WHERE jobid = 1;`
 4. **Check timeout**: Should be at least 60000ms (60 seconds)
+
+### No Signals Being Generated
+
+If the function returns 200 but no signals appear in the database:
+
+1. **Check edge function logs**: Supabase Dashboard → Edge Functions → smart-endpoint → Logs
+   - Look for "Signal threshold not met" messages showing LONG/SHORT scores
+   - Check for FMP API errors
+   - Verify symbols are being processed
+
+2. **Verify FMP API key**: Ensure `FMP_API_KEY` is set in Edge Function secrets
+
+3. **Check signal scores**: The function logs signal scores when threshold isn't met
+   - Threshold is 70 (configurable via `SIGNAL_SCORE_THRESHOLD`)
+   - If scores are consistently below 70, market conditions may not meet criteria
+
+4. **Verify symbols are active**: 
+   ```sql
+   SELECT id, fmp_symbol, display_symbol, is_active 
+   FROM public.symbols 
+   WHERE is_active = true;
+   ```
+
+5. **Test function manually**: Call the edge function directly with proper auth to see detailed logs
 

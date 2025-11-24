@@ -1,121 +1,161 @@
 /**
- * Engine Orchestration
+ * Engine Logic for Edge Function
+ * Replicates lib/signals/engine.ts but for Deno
  */
 
-import { Timeframe, SYMBOLS, RISK_CONFIG, inferSignalType } from './config.ts'
-import { OHLCV, computeIndicators } from './indicators.ts'
+import { Timeframe, SYMBOLS, RISK_CONFIG } from './config.ts'
+import { FactorSnapshot, GeneratedSignalCandidate } from './factors.ts'
 import { detectRegime } from './regime.ts'
-import { computeAllFactors } from './factors.ts'
-import { finalScore, buildReason } from './scoring.ts'
+import { scoreLong, scoreShort, calculateTotalScore } from './scoring.ts'
+import { ema, rsi, macd, atr, sma, recentHighLow } from './indicators.ts'
 
-export interface SignalResult {
-  symbol: string
-  direction: 'long' | 'short'
-  score: number
-  tier: 'A' | 'B' | 'C'
-  regime: string
-  entry: number
-  sl: number
-  tp: number
-  rr: number
-  timeframe: Timeframe
-  factors: any
-  explanation: string
+const FMP_API_KEY = Deno.env.get("FMP_API_KEY")
+const FMP_BASE = "https://financialmodelingprep.com/api/v3"
+
+async function getFmpHistoricalCandles(symbol: string, timeframe: string, limit: number) {
+  if (!FMP_API_KEY) return []
+  try {
+    const url = `${FMP_BASE}/historical-chart/${timeframe}/${encodeURIComponent(symbol)}?apikey=${FMP_API_KEY}&limit=${limit}`
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch (e) {
+    console.error("FMP Error:", e)
+    return []
+  }
 }
 
-/**
- * Analyze a single symbol for a specific timeframe
- */
-export function analyzeSymbol(
-  symbol: string, 
-  timeframe: Timeframe, 
-  ohlcv: OHLCV[]
-): SignalResult | null {
-  if (ohlcv.length < 200) return null
-  
-  // 1. Compute Indicators
-  const indicatorsList = computeIndicators(ohlcv)
-  const lastInd = indicatorsList[indicatorsList.length - 1]
-  const prevInd = indicatorsList[indicatorsList.length - 2] // needed for some logic check
-  
-  if (!lastInd || !prevInd) return null
-  
-  const lastPrice = ohlcv[ohlcv.length - 1].close
-  const lastVolume = ohlcv[ohlcv.length - 1].volume
-  
-  // Recent High/Low (20 periods)
-  let high20 = -Infinity
-  let low20 = Infinity
-  for (let i = ohlcv.length - 20; i < ohlcv.length; i++) {
-    if (ohlcv[i].high > high20) high20 = ohlcv[i].high
-    if (ohlcv[i].low < low20) low20 = ohlcv[i].low
-  }
-  
-  // 2. Detect Regime
-  const regime = detectRegime(indicatorsList, ohlcv)
-  
-  // Filter: Only trade Trends for v2 (as requested)
-  if (regime !== 'uptrend' && regime !== 'downtrend') {
-    // Skip range/chop for now
+export async function buildFactorSnapshot(symbol: string, timeframe: Timeframe): Promise<FactorSnapshot | null> {
+  try {
+    const fmpTf = timeframe === '1h' ? '1hour' : timeframe === '4h' ? '4hour' : timeframe === '1d' ? '1day' : timeframe === '15m' ? '15min' : timeframe === '5m' ? '5min' : timeframe === '1m' ? '1min' : '1hour'
+    
+    const candles = await getFmpHistoricalCandles(symbol, fmpTf, 250)
+    if (!candles || candles.length < 200) return null
+    
+    const sortedCandles = [...candles].reverse()
+    const closes = sortedCandles.map((c: any) => c.close)
+    const highs = sortedCandles.map((c: any) => c.high)
+    const lows = sortedCandles.map((c: any) => c.low)
+    const volumes = sortedCandles.map((c: any) => c.volume)
+    
+    // VALIDATION: Sanity check price dynamically
+    const currentPrice = closes[closes.length - 1]
+    
+    // Basic zero check
+    if (!currentPrice || currentPrice <= 0) {
+      console.warn(`[Engine] Invalid price for ${symbol}: ${currentPrice}`)
+      return null
+    }
+
+    // Calculate EMA200 for validation
+    const ema200 = ema(closes, 200)
+    const ema200Now = ema200[ema200.length - 1]
+
+    // Dynamic validation: Price shouldn't deviate > 50% from EMA200
+    // This catches bad data (e.g. stock price for crypto) without hardcoded ranges
+    if (ema200Now && Math.abs(currentPrice - ema200Now) / ema200Now > 0.5) {
+      console.warn(`[Engine] Price deviation > 50% from EMA200 for ${symbol}. Price: ${currentPrice}, EMA200: ${ema200Now}. Likely bad data.`)
+      return null
+    }
+
+    const ema20 = ema(closes, 20)
+    const ema50 = ema(closes, 50)
+    const rsi14 = rsi(closes, 14)
+    const macdData = macd(closes)
+    const atr14 = atr(highs, lows, closes, 14)
+    const volAvg20 = sma(volumes, 20)
+    const { highs: highs20, lows: lows20 } = recentHighLow(highs, lows, 20)
+    const { highs: highs50, lows: lows50 } = recentHighLow(highs, lows, 50)
+    
+    const idx = closes.length - 1
+    
+    return {
+      symbol,
+      timeframe,
+      now: new Date(),
+      close: closes[idx],
+      ema20: ema20[ema20.length - 1],
+      ema50: ema50[ema50.length - 1],
+      ema200: ema200[ema200.length - 1],
+      rsi14: rsi14[rsi14.length - 1],
+      macdHist: macdData.histogram[macdData.histogram.length - 1],
+      macdHistSlope: macdData.histogram[macdData.histogram.length - 1] - macdData.histogram[macdData.histogram.length - 2],
+      atr: atr14[atr14.length - 1],
+      atrPct: atr14[atr14.length - 1] / closes[idx],
+      volume: volumes[idx],
+      volumeAvg20: volAvg20[volAvg20.length - 1],
+      volumeRatio: volumes[idx] / (volAvg20[volAvg20.length - 1] || 1),
+      high20: highs20[highs20.length - 1],
+      low20: lows20[lows20.length - 1],
+      high50: highs50[highs50.length - 1],
+      low50: lows50[lows50.length - 1]
+    }
+  } catch (error) {
+    console.error(`[Engine] Error building snapshot for ${symbol}:`, error)
     return null
   }
+}
+
+export function generateSignal(f: FactorSnapshot): GeneratedSignalCandidate | null {
+  const regime = detectRegime(f)
+  const longScores = scoreLong(f, regime)
+  const shortScores = scoreShort(f, regime)
+  const longTotal = calculateTotalScore(longScores)
+  const shortTotal = calculateTotalScore(shortScores)
+  const THRESHOLD = 60
   
-  // 3. Compute Factors
-  const { long, short } = computeAllFactors(lastInd, lastPrice, lastVolume, high20, low20)
+  let direction: 'LONG' | 'SHORT'
+  let scores
+  let totalScore
   
-  // 4. Score & Decision
-  let direction: 'long' | 'short' | null = null
-  let factors = null
-  let score = 0
-  
-  if (regime === 'uptrend') {
-    score = finalScore(long)
-    direction = 'long'
-    factors = long
-  } else if (regime === 'downtrend') {
-    score = finalScore(short)
-    direction = 'short'
-    factors = short
-  }
-  
-  // Threshold
-  if (score < 75 || !direction || !factors) return null
-  
-  const tier = score >= 85 ? 'A' : 'B'
-  
-  // 5. Entry/SL/TP
-  // Lookup asset type
-  const symConfig = SYMBOLS.find(s => s.symbol === symbol)
-  if (!symConfig) return null
-  
-  const riskCfg = RISK_CONFIG[symConfig.type]
-  const atr = lastInd.atr14
-  
-  const entry = lastPrice
-  let sl, tp
-  
-  if (direction === 'long') {
-    sl = entry - (riskCfg.atrMultipleSL * atr)
-    tp = entry + riskCfg.rrTarget * (entry - sl)
+  if (longTotal >= shortTotal) {
+    direction = 'LONG'
+    scores = longScores
+    totalScore = longTotal
   } else {
-    sl = entry + (riskCfg.atrMultipleSL * atr)
-    tp = entry - riskCfg.rrTarget * (sl - entry)
+    direction = 'SHORT'
+    scores = shortScores
+    totalScore = shortTotal
   }
   
-  const explanation = buildReason(factors, regime, direction, timeframe)
+  if (totalScore < THRESHOLD) return null
+  
+  const atr = f.atr
+  if (!atr || atr <= 0) return null
+
+  // Lookup asset type risk config
+  const symConfig = SYMBOLS.find(s => s.symbol === f.symbol)
+  const riskCfg = symConfig ? RISK_CONFIG[symConfig.type] : { atrMultipleSL: 2.0, rrTarget: 2.0 } // Default fallback
+
+  const riskMultiple = riskCfg.atrMultipleSL
+  const rewardMultiple = riskCfg.rrTarget
+  
+  let stop, target
+  if (direction === 'LONG') {
+    stop = f.close - (atr * riskMultiple)
+    target = f.close + (atr * riskMultiple * rewardMultiple)
+  } else {
+    stop = f.close + (atr * riskMultiple)
+    target = f.close - (atr * riskMultiple * rewardMultiple)
+  }
+  
+  let qualityTier: 'A' | 'B' | 'C' = 'C'
+  if (totalScore >= 80) qualityTier = 'A'
+  else if (totalScore >= 70) qualityTier = 'B'
+  
+  const explanation = `${direction} ${regime.toUpperCase()} signal (Score: ${totalScore}). Trend: ${Math.round(scores.trendScore*100)}%, Mom: ${Math.round(scores.momentumScore*100)}%, Vol: ${Math.round(scores.volumeScore*100)}%`
   
   return {
-    symbol,
     direction,
-    score: Math.round(score),
-    tier,
+    score: totalScore,
+    qualityTier,
+    entry: f.close,
+    stop,
+    target,
+    rr: rewardMultiple,
     regime,
-    entry,
-    sl,
-    tp,
-    rr: riskCfg.rrTarget,
-    timeframe,
-    factors,
+    factors: { ...f, factorScores: scores },
     explanation
   }
 }

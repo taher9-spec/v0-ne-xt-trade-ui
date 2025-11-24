@@ -3,7 +3,7 @@
  * Orchestrates data fetching, factor calculation, and signal generation
  */
 
-import { SymbolConfig, Timeframe, SYMBOLS } from './config'
+import { SymbolConfig, Timeframe, SYMBOLS, RISK_CONFIG } from './config'
 import { FactorSnapshot, GeneratedSignalCandidate } from './factors'
 import { detectRegime } from './regime'
 import { scoreLong, scoreShort, calculateTotalScore } from './scoring'
@@ -114,8 +114,15 @@ export function generateSignal(f: FactorSnapshot): GeneratedSignalCandidate | nu
     return null
   }
 
-  const riskMultiple = regime === 'range' ? 1.5 : 2.0 // Tighter stop in range
-  const rewardMultiple = regime === 'trend' ? 2.5 : 1.5 // Higher target in trend
+  // Lookup asset type risk config
+  const symConfig = SYMBOLS.find(s => s.symbol === f.symbol)
+  const riskCfg = symConfig ? RISK_CONFIG[symConfig.type] : { atrMultipleSL: 2.0, rrTarget: 2.0 } // Default fallback
+
+  const riskMultiple = riskCfg.atrMultipleSL
+  const rewardMultiple = riskCfg.rrTarget
+  
+  // Adjust for regime if needed (optional refinement)
+  // e.g. tighter SL in range? For now stick to config to ensure user control.
   
   let stop, target
   if (direction === 'LONG') {

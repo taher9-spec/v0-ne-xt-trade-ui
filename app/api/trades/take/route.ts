@@ -93,31 +93,25 @@ export async function POST(req: NextRequest) {
     const riskPerUnit = Math.abs(entry - sl)
     const size = riskPerUnit > 0 ? riskAmount / riskPerUnit : 0
 
-    // Build trade insert object (handle missing columns gracefully)
+    // Build trade insert object with required fields
+    // Note: trades table uses entry_price, not entry
     const tradeData: any = {
       user_id: userId,
       signal_id: signalId,
-      symbol: signal.symbol || signal.symbols?.display_symbol || "UNKNOWN",
+      symbol: signal.symbol || "UNKNOWN",
       direction: signal.direction,
-      entry_price: entry,
+      entry_price: entry, // Use entry from signal (mapped to entry_price in trades table)
+      sl: sl, // Use sl from signal
+      tp1: signal.tp1 !== null && signal.tp1 !== undefined 
+        ? (typeof signal.tp1 === "number" ? signal.tp1 : parseFloat(String(signal.tp1)))
+        : null,
       status: "open",
       opened_at: new Date().toISOString(),
     }
 
     // Add optional fields if they exist
     if (signal.symbol_id) tradeData.symbol_id = signal.symbol_id
-    if (signal.sl !== null && signal.sl !== undefined) tradeData.sl = sl
-    if (signal.tp1 !== null && signal.tp1 !== undefined) {
-      tradeData.tp1 = typeof signal.tp1 === "number" ? signal.tp1 : parseFloat(String(signal.tp1))
-    }
-    if (signal.tp2 !== null && signal.tp2 !== undefined) {
-      tradeData.tp2 = typeof signal.tp2 === "number" ? signal.tp2 : parseFloat(String(signal.tp2))
-    }
-    if (signal.tp3 !== null && signal.tp3 !== undefined) {
-      tradeData.tp3 = typeof signal.tp3 === "number" ? signal.tp3 : parseFloat(String(signal.tp3))
-    }
     if (signal.timeframe) tradeData.timeframe = signal.timeframe
-    if (size > 0) tradeData.size = size
 
     // Create trade
     const { data: trade, error: tradeError } = await supabase

@@ -3,23 +3,30 @@ import type { Signal } from "@/lib/types"
 
 /**
  * Get today's active signals
- * SELECT * FROM signals WHERE status = 'active' AND activated_at::date = current_date
+ * SELECT id, symbol, direction, type, market, entry, sl, tp1, timeframe, status, activated_at
+ * FROM signals WHERE status = 'active' AND activated_at::date = current_date
+ * ORDER BY activated_at DESC
  */
 export async function getTodaySignals(limit: number = 50): Promise<Signal[]> {
   try {
     const supabase = createSupabaseClient()
 
-    // Get today's date at 00:00 UTC
+    // Get today's date range (midnight to midnight+1 day)
     const today = new Date()
     today.setUTCHours(0, 0, 0, 0)
     const startOfTodayUtc = today.toISOString()
+    
+    const tomorrow = new Date(today)
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+    const startOfTomorrowUtc = tomorrow.toISOString()
 
-    // Query signals with status='active' and activated_at >= today
+    // Query signals with status='active' and activated_at >= today and < tomorrow
     const { data, error } = await supabase
       .from("signals")
-      .select("*, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
+      .select("id, symbol, direction, type, market, entry, sl, tp1, timeframe, status, activated_at")
       .eq("status", "active")
       .gte("activated_at", startOfTodayUtc)
+      .lt("activated_at", startOfTomorrowUtc)
       .order("activated_at", { ascending: false })
       .limit(limit)
 

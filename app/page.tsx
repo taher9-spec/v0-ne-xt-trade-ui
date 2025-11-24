@@ -486,10 +486,14 @@ export default function NextTradeUI() {
 
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-zinc-400">Today's Signals</h2>
-          <Badge variant="outline" className="border-zinc-700 text-zinc-400">
-            {loadingSignals ? "..." : signals.length} active
-          </Badge>
+          <h2 className="text-sm font-semibold text-zinc-400">
+            {signals.length > 0 ? `Today's Signals: ${signals.length} active` : "Today's Signals"}
+          </h2>
+          {signals.length > 0 && (
+            <Badge variant="outline" className="border-zinc-700 text-zinc-400">
+              {loadingSignals ? "..." : signals.length} active
+            </Badge>
+          )}
         </div>
 
         {loadingSignals ? (
@@ -506,9 +510,18 @@ export default function NextTradeUI() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {signals.map((signal) => (
-              <SignalCard key={signal.id} signal={signal} />
-            ))}
+            {/* Render the first signal in big card layout */}
+            {signals.length > 0 && (
+              <SignalCard key={signals[0].id} signal={signals[0]} />
+            )}
+            {/* Optionally show more signals below */}
+            {signals.length > 1 && (
+              <div className="space-y-3">
+                {signals.slice(1).map((signal) => (
+                  <SignalCard key={signal.id} signal={signal} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>

@@ -131,6 +131,9 @@ export async function POST(req: NextRequest) {
       tp3: signal.tp3 !== null && signal.tp3 !== undefined 
         ? (typeof signal.tp3 === "number" ? signal.tp3 : parseFloat(String(signal.tp3)))
         : null,
+      tp3: signal.tp3 !== null && signal.tp3 !== undefined 
+        ? (typeof signal.tp3 === "number" ? signal.tp3 : parseFloat(String(signal.tp3)))
+        : null,
       status: "open",
       opened_at: new Date().toISOString(),
       size: size > 0 ? size : null,
@@ -139,6 +142,14 @@ export async function POST(req: NextRequest) {
     // Add optional fields
     if (signal.symbol_id) tradeData.symbol_id = signal.symbol_id
     if (signal.timeframe) tradeData.timeframe = signal.timeframe
+    if (signal.market) tradeData.market = signal.market
+    if (signal.rr ?? signal.rr_ratio) tradeData.rr = parseFloat(String(signal.rr ?? signal.rr_ratio))
+    if (signal.score ?? signal.signal_score) tradeData.signal_score = parseFloat(String(signal.score ?? signal.signal_score))
+    if (signal.quality_tier) tradeData.quality_tier = signal.quality_tier
+    if (signal.regime) tradeData.regime = signal.regime
+    if (signal.explanation) tradeData.signal_explanation = signal.explanation
+    if (signal.symbols?.fmp_symbol) tradeData.fmp_symbol = signal.symbols.fmp_symbol
+    if (signal.symbols?.display_symbol) tradeData.display_symbol = signal.symbols.display_symbol
 
     // 12. Create trade
     const { data: trade, error: tradeError } = await supabase

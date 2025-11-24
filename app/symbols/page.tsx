@@ -25,10 +25,15 @@ type Symbol = {
 
 type SymbolWithPrice = Symbol & {
   currentPrice: number | null
-  priceChange: number | null
+  priceChangePercent: number | null
+  priceChangeDollar: number | null
   lastPriceUpdate: string | null
   activeSignal: Signal | null
   signalCount: number
+  directionStats: {
+    long: number
+    short: number
+  }
   volatility?: number
   volume?: number
 }
@@ -55,6 +60,21 @@ function formatNumber(num: number | null, decimals: number = 2): string {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(num)
+}
+
+function formatRelativeTime(timestamp: string | null): string {
+  if (!timestamp) return "—"
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMinutes = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMinutes / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffMinutes < 1) return "just now"
+  if (diffMinutes < 60) return `${diffMinutes}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  return `${diffDays}d ago`
 }
 
 export default function SymbolsPage() {
@@ -128,11 +148,17 @@ export default function SymbolsPage() {
         // Create a map of symbol_id -> latest signal and count
         const signalMap = new Map<string, Signal>()
         const signalCountMap = new Map<string, number>()
+        const directionMap = new Map<string, { long: number; short: number }>()
         if (signalsData) {
           signalsData.forEach((signal: any) => {
             if (signal.symbol_id) {
               // Count signals per symbol
               signalCountMap.set(signal.symbol_id, (signalCountMap.get(signal.symbol_id) || 0) + 1)
+              const normalizedDirection = (signal.direction || "").toString().toLowerCase()
+              const summary = directionMap.get(signal.symbol_id) || { long: 0, short: 0 }
+              if (normalizedDirection === "long") summary.long += 1
+              if (normalizedDirection === "short") summary.short += 1
+              directionMap.set(signal.symbol_id, summary)
               // Store latest signal
               if (!signalMap.has(signal.symbol_id)) {
                 signalMap.set(signal.symbol_id, signal as Signal)
@@ -153,36 +179,43 @@ export default function SymbolsPage() {
               return {
                 symbolId: symbol.id,
                 price: data.price ? parseFloat(String(data.price)) : null,
-                change: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
-                timestamp: new Date().toISOString(),
+                changePercent: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
+                changeDollar: data.change ? parseFloat(String(data.change)) : null,
+                timestamp: data.timestamp || new Date().toISOString(),
               }
             }
           } catch (e) {
             console.error(`[symbols] Failed to fetch price for ${symbol.fmp_symbol}:`, e)
           }
-          return { symbolId: symbol.id, price: null, change: null }
+          return { symbolId: symbol.id, price: null, changePercent: null, changeDollar: null, timestamp: null }
         })
 
         const priceResults = await Promise.all(pricePromises)
         const priceMap = new Map(
-          priceResults.map((r) => [r.symbolId, { price: r.price, change: r.change, timestamp: r.timestamp }])
+          priceResults.map((r) => [
+            r.symbolId,
+            { price: r.price, changePercent: r.changePercent, changeDollar: r.changeDollar, timestamp: r.timestamp },
+          ])
         )
 
         // Combine symbols with prices and signals
         const symbolsWithData: SymbolWithPrice[] = symbols.map((symbol) => {
-          const priceData = priceMap.get(symbol.id) || { price: null, change: null, timestamp: null }
+          const priceData =
+            priceMap.get(symbol.id) || { price: null, changePercent: null, changeDollar: null, timestamp: null }
           const activeSignal = signalMap.get(symbol.id) || null
           const signalCount = signalCountMap.get(symbol.id) || 0
 
           return {
             ...symbol,
             currentPrice: priceData.price,
-            priceChange: priceData.change,
+            priceChangePercent: priceData.changePercent,
+            priceChangeDollar: priceData.changeDollar,
             lastPriceUpdate: priceData.timestamp,
             activeSignal,
             signalCount,
+            directionStats: directionMap.get(symbol.id) || { long: 0, short: 0 },
             // Calculate volatility from price change (0-100 scale)
-            volatility: priceData.change !== null ? Math.min(100, Math.abs(priceData.change) * 20) : 0,
+            volatility: priceData.changePercent !== null ? Math.min(100, Math.abs(priceData.changePercent) * 20) : 0,
             volume: null, // Can be added from API later
           }
         })
@@ -205,9 +238,13 @@ export default function SymbolsPage() {
                       ? {
                           ...s,
                           currentPrice: data.price ? parseFloat(String(data.price)) : null,
-                          priceChange: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
-                          lastPriceUpdate: new Date().toISOString(),
-                          volatility: data.changesPercentage !== null ? Math.min(100, Math.abs(parseFloat(String(data.changesPercentage))) * 20) : 0,
+                          priceChangePercent: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
+                          priceChangeDollar: data.change ? parseFloat(String(data.change)) : null,
+                          lastPriceUpdate: data.timestamp || new Date().toISOString(),
+                          volatility:
+                            data.changesPercentage !== null
+                              ? Math.min(100, Math.abs(parseFloat(String(data.changesPercentage))) * 20)
+                              : 0,
                         }
                       : s
                   )
@@ -438,8 +475,8 @@ function SymbolCard({
   const [logoError, setLogoError] = useState(false)
 
   // Determine sentiment from price change
-  const sentiment = symbol.priceChange !== null 
-    ? (symbol.priceChange > 0 ? 'bullish' : symbol.priceChange < 0 ? 'bearish' : 'neutral')
+  const sentiment = symbol.priceChangePercent !== null 
+    ? (symbol.priceChangePercent > 0 ? 'bullish' : symbol.priceChangePercent < 0 ? 'bearish' : 'neutral')
     : 'neutral'
   
   // Volatility indicator (0-100 scale)
@@ -501,16 +538,14 @@ function SymbolCard({
             ) : (
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${
                 symbol.asset_class === 'crypto'
-                  ? "bg-purple-500/10 border-purple-500/30"
+                  ? "bg-purple-500/10 border-purple-500/30 text-purple-300"
                   : symbol.asset_class === 'forex'
-                  ? "bg-blue-500/10 border-blue-500/30"
+                  ? "bg-blue-500/10 border-blue-500/30 text-blue-300"
                   : symbol.asset_class === 'commodity'
-                  ? "bg-yellow-500/10 border-yellow-500/30"
-                  : "bg-zinc-800/50 border-zinc-700"
+                  ? "bg-yellow-500/10 border-yellow-500/30 text-amber-300"
+                  : "bg-zinc-800/50 border-zinc-700 text-zinc-300"
               }`}>
-                <span className="text-xs font-bold text-zinc-300">
-                  {symbol.display_symbol.substring(0, 2)}
-                </span>
+                <Icon className="w-4 h-4" />
               </div>
             )}
             <div>
@@ -545,24 +580,31 @@ function SymbolCard({
               <p className="text-lg font-bold">
                 ${formatNumber(symbol.currentPrice, symbol.asset_class === "forex" ? 5 : 2)}
               </p>
-              {symbol.priceChange !== null && (
+              {symbol.priceChangePercent !== null && (
                 <div>
                   <p
-                    className={`text-sm font-semibold flex items-center gap-1 ${
-                      symbol.priceChange >= 0 ? "text-emerald-400" : "text-rose-400"
+                    className={`text-sm font-semibold flex items-center gap-2 ${
+                      symbol.priceChangePercent >= 0 ? "text-emerald-400" : "text-rose-400"
                     }`}
                   >
-                    {symbol.priceChange >= 0 ? (
+                    {symbol.priceChangePercent >= 0 ? (
                       <TrendingUp className="w-3 h-3" />
                     ) : (
                       <TrendingDown className="w-3 h-3" />
                     )}
-                    {symbol.priceChange >= 0 ? "+" : ""}
-                    {formatNumber(symbol.priceChange, 2)}%
+                    <span>
+                      {symbol.priceChangeDollar !== null
+                        ? `${symbol.priceChangePercent >= 0 ? "+" : ""}${formatNumber(symbol.priceChangeDollar, 2)}`
+                        : ""}
+                    </span>
+                    <span>
+                      ({symbol.priceChangePercent >= 0 ? "+" : ""}
+                      {formatNumber(symbol.priceChangePercent, 2)}%)
+                    </span>
                   </p>
                   {symbol.lastPriceUpdate && (
-                    <p className="text-[9px] text-zinc-600 mt-0.5">
-                      {new Date(symbol.lastPriceUpdate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    <p className="text-[10px] text-zinc-500 mt-0.5">
+                      Updated {formatRelativeTime(symbol.lastPriceUpdate)}
                     </p>
                   )}
                 </div>
@@ -574,23 +616,40 @@ function SymbolCard({
         </div>
 
         {/* Signal Count - Show count and navigate to symbol signals */}
-        {symbol.signalCount > 0 && (
-          <div className="text-right">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                router.push(`/signals?symbol=${encodeURIComponent(symbol.display_symbol)}&status=active`)
-              }}
-              className="relative inline-block group"
-            >
-              <div className="absolute inset-0 bg-emerald-500/20 rounded-lg blur-sm animate-pulse group-hover:bg-emerald-500/30 transition-colors" />
-              <div className="h-5 px-2 rounded-lg bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/40 text-emerald-300 backdrop-blur-sm relative z-10 flex items-center gap-1 text-[9px] font-medium">
-                <Sparkles className="w-2.5 h-2.5" />
-                <span>{symbol.signalCount}</span>
+        <div className="text-right">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onSymbolClick(symbol)
+            }}
+            className="relative inline-block group"
+          >
+            <div className={`absolute inset-0 rounded-lg blur-sm transition-colors ${symbol.signalCount > 0 ? "bg-emerald-500/20 group-hover:bg-emerald-500/30 animate-pulse" : "bg-zinc-800"}`} />
+            <div className={`h-12 px-3 rounded-lg border backdrop-blur-sm relative z-10 flex flex-col justify-center gap-1 text-[10px] font-medium min-w-[90px] ${
+              symbol.signalCount > 0
+                ? "bg-gradient-to-r from-emerald-500/15 to-emerald-600/15 border-emerald-500/40 text-emerald-100"
+                : "bg-zinc-900 border-zinc-800 text-zinc-400"
+            }`}>
+              <div className="flex items-center justify-between text-[11px]">
+                <span>Signals</span>
+                <Sparkles className="w-3 h-3" />
               </div>
-            </button>
-          </div>
-        )}
+              <div className="flex items-center justify-between text-[10px]">
+                <span className={`flex items-center gap-1 ${symbol.signalCount > 0 ? "text-emerald-300" : "text-zinc-500"}`}>
+                  <TrendingUp className="w-3 h-3" />
+                  {symbol.directionStats.long}
+                </span>
+                <span className={`flex items-center gap-1 ${symbol.signalCount > 0 ? "text-rose-300" : "text-zinc-500"}`}>
+                  <TrendingDown className="w-3 h-3" />
+                  {symbol.directionStats.short}
+                </span>
+              </div>
+              <div className="text-[9px] text-right">
+                Total {symbol.signalCount}
+              </div>
+            </div>
+          </button>
+        </div>
       </div>
     </Card>
   )

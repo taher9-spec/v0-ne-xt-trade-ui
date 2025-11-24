@@ -22,6 +22,7 @@ export interface Trade {
   floating_r?: number | null
   floating_pnl_percent?: number | null
   current_price?: number | null
+  current_price_updated_at?: string | null
   status: TradeStatus
   opened_at: string
   closed_at: string | null

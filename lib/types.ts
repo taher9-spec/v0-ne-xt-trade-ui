@@ -61,10 +61,19 @@ export type Trade = {
   floating_r?: number | null
   floating_pnl_percent?: number | null
   current_price?: number | null
+  current_price_updated_at?: string | null
   opened_at: string
   closed_at: string | null
   size?: number | null
   rr?: number | null
+  market?: string | null
+  signal_score?: number | null
+  quality_tier?: string | null
+  regime?: string | null
+  signal_explanation?: string | null
+  fmp_symbol?: string | null
+  display_symbol?: string | null
+  tp_hit_level?: "tp1" | "tp2" | "tp3" | null
   notes?: string | null
   symbols?: {
     fmp_symbol?: string

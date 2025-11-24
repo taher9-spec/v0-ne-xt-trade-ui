@@ -66,6 +66,18 @@ export async function POST(req: NextRequest) {
     let resultR = 0
     let pnlPercent = 0
     let pnl = 0
+    const parseTarget = (value: any) => {
+      if (value === null || value === undefined) return null
+      const parsed = typeof value === "number" ? value : parseFloat(String(value))
+      return isNaN(parsed) ? null : parsed
+    }
+    const tpTargets = [
+      { level: "tp3", value: parseTarget(trade.tp3) },
+      { level: "tp2", value: parseTarget(trade.tp2) },
+      { level: "tp1", value: parseTarget(trade.tp1) },
+    ]
+    let tpHitLevel: string | null = null
+    let statusUpdate: "open" | "closed" | "tp_hit" | "sl_hit" | "closed_manual" = "closed"
 
     if (riskPerUnit > 0) {
       // Calculate R-multiple
@@ -90,11 +102,34 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const tolerance = Math.max(riskPerUnit * 0.05, Math.abs(entry) * 0.0002)
+    for (const target of tpTargets) {
+      if (!target.value) continue
+      const hit =
+        trade.direction === "long"
+          ? closePrice >= target.value - tolerance
+          : closePrice <= target.value + tolerance
+      if (hit) {
+        tpHitLevel = target.level
+        statusUpdate = "tp_hit"
+        break
+      }
+    }
+    if (!tpHitLevel) {
+      const slHit =
+        trade.direction === "long"
+          ? closePrice <= sl + tolerance
+          : closePrice >= sl - tolerance
+      if (slHit) {
+        statusUpdate = "sl_hit"
+      }
+    }
+
     // Update trade
     const { data: updatedTrade, error: updateError } = await supabase
       .from("trades")
       .update({
-        status: "closed",
+        status: statusUpdate,
         closed_at: new Date().toISOString(),
         exit_price: closePrice,
         close_price: closePrice,
@@ -102,6 +137,7 @@ export async function POST(req: NextRequest) {
         rr: resultR,
         pnl_percent: pnlPercent,
         pnl: pnl,
+        tp_hit_level: tpHitLevel,
       })
       .eq("id", body.tradeId)
       .select()

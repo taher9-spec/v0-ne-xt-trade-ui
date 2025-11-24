@@ -11,23 +11,13 @@ export async function getTodaySignals(limit: number = 50): Promise<Signal[]> {
   try {
     const supabase = createSupabaseClient()
 
-    // Get today's date range (midnight to midnight+1 day)
-    const today = new Date()
-    today.setUTCHours(0, 0, 0, 0)
-    const startOfTodayUtc = today.toISOString()
-    
-    const tomorrow = new Date(today)
-    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
-    const startOfTomorrowUtc = tomorrow.toISOString()
-
-    // Query signals with status='active' and activated_at >= today and < tomorrow
+    // Query most recent active signals (all timeframes)
     const { data, error } = await supabase
       .from("signals")
-      .select("id, symbol, direction, type, market, entry, sl, tp1, timeframe, status, activated_at, signal_score, reason_summary, engine_version, symbol_id, symbols(fmp_symbol, display_symbol, name, asset_class)")
+      .select("*, symbols(fmp_symbol, display_symbol, name, asset_class)")
       .eq("status", "active")
-      .gte("activated_at", startOfTodayUtc)
-      .lt("activated_at", startOfTomorrowUtc)
-      .order("activated_at", { ascending: false })
+      .order("activated_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
       .limit(limit)
 
     if (error) {

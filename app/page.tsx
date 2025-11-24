@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { motion, AnimatePresence } from "framer-motion"
 import { TrendingUp, TrendingDown, Sparkles, Send, Home, BookOpen, Bot, UserIcon, Crown, Coins, Lock, LogOut, Check, Plus, MessageSquare, Target, AlertCircle, X, Clock, DollarSign, TrendingUp as UpIcon, TrendingDown as DownIcon, Info, AlertTriangle, CheckCircle2 } from "lucide-react"
@@ -66,6 +67,44 @@ type AuthUser = {
   approx_balance: number | null
   risk_percent: number | null
   main_market?: string | null
+}
+
+type TimeframeStyle = {
+  strip: string
+  badge: string
+}
+
+const TIMEFRAME_STYLE_MAP: Record<string, TimeframeStyle> = {
+  "5m": {
+    strip: "from-cyan-500/70 via-blue-500/40 to-transparent",
+    badge: "bg-cyan-500/15 border-cyan-500/40 text-cyan-50",
+  },
+  "15m": {
+    strip: "from-indigo-500/70 via-purple-500/40 to-transparent",
+    badge: "bg-purple-500/15 border-purple-500/40 text-purple-50",
+  },
+  "1h": {
+    strip: "from-amber-500/70 via-orange-500/40 to-transparent",
+    badge: "bg-amber-500/15 border-amber-500/40 text-amber-50",
+  },
+  "4h": {
+    strip: "from-rose-500/70 via-pink-500/40 to-transparent",
+    badge: "bg-rose-500/15 border-rose-500/40 text-rose-50",
+  },
+  "1d": {
+    strip: "from-sky-500/70 via-slate-500/40 to-transparent",
+    badge: "bg-sky-500/15 border-sky-500/40 text-sky-50",
+  },
+  default: {
+    strip: "from-emerald-500/60 via-blue-500/30 to-transparent",
+    badge: "bg-emerald-500/15 border-emerald-500/40 text-emerald-50",
+  },
+}
+
+const getTimeframeStyle = (raw?: string | null): TimeframeStyle => {
+  if (!raw) return TIMEFRAME_STYLE_MAP.default
+  const key = raw.toLowerCase()
+  return TIMEFRAME_STYLE_MAP[key] || TIMEFRAME_STYLE_MAP.default
 }
 
 export default function NextTradeUI() {
@@ -745,6 +784,13 @@ export default function NextTradeUI() {
     const logoUrl = getSymbolLogo(signal.symbol, signal.symbols?.asset_class)
     const [logoError, setLogoError] = useState(false)
     const assetClass = signal.symbols?.asset_class || 'forex'
+    const priceDecimals = assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2
+    const timeframeStyle = getTimeframeStyle(signal.timeframe)
+    const tpLevels = [
+      { label: "TP1", value: signal.tp1 ?? signal.target_price ?? null },
+      { label: "TP2", value: signal.tp2 ?? null },
+      { label: "TP3", value: signal.tp3 ?? null },
+    ].filter((level): level is { label: string; value: number } => level.value !== null && level.value !== undefined)
     
     // Calculate volatility from price change
     const volatility = priceChange !== null ? Math.min(100, Math.abs(priceChange) * 20) : 0
@@ -756,6 +802,7 @@ export default function NextTradeUI() {
           ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
           : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
       }`}>
+        <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${timeframeStyle.strip} opacity-80`} />
         {/* Blur overlay for locked signals */}
         {!symbolUnlocked && (
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-20 rounded-lg flex flex-col items-center justify-center p-4">
@@ -843,8 +890,8 @@ export default function NextTradeUI() {
               )}
 
               {signal.timeframe && (
-                <Badge variant="outline" className="h-7 px-2.5 text-[10px] border-zinc-700/50 text-zinc-400 bg-zinc-900/80 backdrop-blur-sm">
-                  {signal.timeframe}
+                <Badge variant="outline" className={`h-7 px-2.5 text-[10px] backdrop-blur-sm ${timeframeStyle.badge}`}>
+                  {signal.timeframe.toUpperCase()}
                 </Badge>
               )}
               
@@ -908,15 +955,26 @@ export default function NextTradeUI() {
         <div className="grid grid-cols-3 gap-3 mb-4 relative z-10">
           <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg hover:bg-zinc-900 transition-colors">
             <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
-            <p className="text-base font-bold text-white">{formatNumber(entry, assetClass === 'forex' ? 5 : 2)}</p>
+            <p className="text-base font-bold text-white">{formatNumber(entry, priceDecimals)}</p>
           </div>
           <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg hover:bg-zinc-900 transition-colors">
             <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
-            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, assetClass === 'forex' ? 5 : 2)}</p>
+            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, priceDecimals)}</p>
           </div>
           <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg hover:bg-zinc-900 transition-colors">
-            <p className="text-[10px] text-zinc-500 mb-1">Target</p>
-            <p className="text-base font-bold text-emerald-400">{target !== null && target !== undefined ? formatNumber(target, assetClass === 'forex' ? 5 : 2) : "TBD"}</p>
+            <p className="text-[10px] text-zinc-500 mb-1">{tpLevels.length > 1 ? "Targets" : "Target"}</p>
+            {tpLevels.length > 0 ? (
+              <div className="space-y-1">
+                {tpLevels.map((level) => (
+                  <div key={level.label} className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-400">{level.label}</span>
+                    <span className="font-semibold text-emerald-400">{formatNumber(level.value, priceDecimals)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-base font-bold text-emerald-400">{target !== null && target !== undefined ? formatNumber(target, priceDecimals) : "TBD"}</p>
+            )}
           </div>
         </div>
 
@@ -1808,12 +1866,14 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const [notes, setNotes] = useState(trade.notes || "")
   const [savingNotes, setSavingNotes] = useState(false)
   const lastAdviceRef = useRef<string | null>(null)
+  const router = useRouter()
   
   // Extract signal data - ONLY use real data from database, NO defaults
   const signal = trade.signals || {}
-  const timeframe = trade.timeframe || signal.timeframe || null
-  const stopLoss = trade.sl || null
-  const targetPrice = trade.tp1 || null
+  const timeframe = (trade.timeframe || signal.timeframe || null) as string | null
+  const entryPrice = trade.entry_price ?? signal.entry ?? signal.entry_price ?? null
+  const stopLoss = (trade.sl ?? signal.sl ?? signal.stop_loss) || null
+  const targetPrice = (trade.tp1 ?? signal.tp1 ?? signal.target_price) || null
   
   // Determine if TP1 or SL was hit - ONLY if status is actually tp_hit/sl_hit AND has close data
   const isTpHit = trade.status === "tp_hit" && trade.closed_at && trade.close_price
@@ -1842,6 +1902,45 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
     }
   }
 
+  const formatRelativeTime = (dateString: string | null | undefined) => {
+    if (!dateString) return ""
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+      if (diffSeconds < 5) return "just now"
+      if (diffSeconds < 60) return `${diffSeconds}s ago`
+
+      const diffMinutes = Math.floor(diffSeconds / 60)
+      if (diffMinutes < 60) return `${diffMinutes}m ago`
+
+      const diffHours = Math.floor(diffMinutes / 60)
+      if (diffHours < 24) return `${diffHours}h ago`
+
+      return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    } catch {
+      return ""
+    }
+  }
+
+  const formatDuration = (start: string | null | undefined, end: string | null | undefined) => {
+    if (!start || !end) return ""
+    try {
+      const startDate = new Date(start)
+      const endDate = new Date(end)
+      const diffMs = Math.max(0, endDate.getTime() - startDate.getTime())
+      const days = Math.floor(diffMs / 86400000)
+      const hours = Math.floor((diffMs % 86400000) / 3600000)
+      const minutes = Math.floor((diffMs % 3600000) / 60000)
+      if (days > 0) return `${days}d ${hours}h`
+      if (hours > 0) return `${hours}h ${minutes}m`
+      return `${minutes}m`
+    } catch {
+      return ""
+    }
+  }
+
   // Get current R and % (for open trades use floating, for closed use result)
   const currentR = trade.status === "open" ? (trade.floating_r ?? 0) : (trade.result_r ?? 0)
   const currentPercent = trade.status === "open" ? (trade.floating_pnl_percent ?? 0) : (trade.pnl_percent ?? 0)
@@ -1856,7 +1955,15 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const direction = (trade.direction || "").toLowerCase() === "long" ? "long" : "short"
   
   // Sentiment/Volume for side indicator - based on price change
-  const assetClass = (trade as any).symbols?.asset_class || 'forex'
+  const assetClass = (trade as any).symbols?.asset_class || trade.market || 'forex'
+  const priceDecimals = assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2
+  const timeframeStyle = getTimeframeStyle(timeframe)
+  const timeframeLabel = timeframe ? timeframe.toUpperCase() : null
+  const tpLevels = [
+    { label: "TP1", value: trade.tp1 ?? targetPrice ?? null },
+    { label: "TP2", value: trade.tp2 ?? null },
+    { label: "TP3", value: trade.tp3 ?? null },
+  ].filter((level): level is { label: string; value: number } => level.value !== null && level.value !== undefined)
   const priceChange = trade.status === "open" ? (trade.floating_pnl_percent || 0) : (trade.pnl_percent || 0)
   const sentiment = priceChange >= 0 ? "positive" : "negative"
   const sentimentIntensity = Math.min(100, Math.abs(priceChange) * 10) // Scale for better visibility
@@ -1874,13 +1981,38 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
     'commodity': 'Commodity',
     'metal': 'Metal'
   }
+  const primarySymbol = trade.display_symbol || (trade as any).symbols?.display_symbol || trade.symbol
+  const logoSymbol = trade.fmp_symbol || (trade as any).symbols?.fmp_symbol || trade.symbol
+
+  const signalScore = typeof trade.signal_score === "number"
+    ? trade.signal_score
+    : (trade.signals as any)?.score ?? null
+  const signalTier = trade.quality_tier || (trade.signals as any)?.quality_tier || null
+  const signalRegime = trade.regime || (trade.signals as any)?.regime || null
+  const signalExplanation = trade.signal_explanation || (trade.signals as any)?.explanation || ""
+  const lastPriceRefresh = trade.status === "open" && trade.current_price_updated_at
+    ? formatRelativeTime(trade.current_price_updated_at)
+    : null
+  const timeInTrade = trade.closed_at ? formatDuration(trade.opened_at, trade.closed_at) : null
+  const openDuration = !trade.closed_at ? formatDuration(trade.opened_at, new Date().toISOString()) : null
+  const nextTargetLabel = (() => {
+    if (!tpProgress || !tpProgress.nextTP) return null
+    const nextTarget =
+      tpProgress.nextTP === "tp1" ? trade.tp1 :
+      tpProgress.nextTP === "tp2" ? trade.tp2 :
+      tpProgress.nextTP === "tp3" ? trade.tp3 :
+      null
+    if (!nextTarget) return null
+    return `${tpProgress.nextTP.toUpperCase()} @ ${formatNumber(nextTarget, priceDecimals)}`
+  })()
 
   return (
-    <Card className={`p-5 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
+    <Card className={`p-4 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
       direction === "long"
         ? "bg-gradient-to-br from-emerald-950/60 via-zinc-950 to-emerald-950/40"
         : "bg-gradient-to-br from-rose-950/60 via-zinc-950 to-rose-950/40"
     }`}>
+      <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${timeframeStyle.strip} opacity-80`} />
       {/* Side indicator - Sentiment/Volume (NOT direction) */}
       <div className="absolute top-0 right-0 w-2.5 h-full z-0">
         <div 
@@ -1903,16 +2035,16 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
       }`} />
       
       {/* Header: Logo, Symbol Name, Category, Timestamp */}
-      <div className="flex items-start justify-between mb-4 relative z-10">
+        <div className="flex items-start justify-between mb-4 relative z-10">
         <div className="flex items-center gap-3 flex-1">
           {/* Symbol logo */}
           {(() => {
-            const logoUrl = getSymbolLogo(trade.symbol, assetClass)
+            const logoUrl = getSymbolLogo(logoSymbol || trade.symbol, assetClass)
             return logoUrl ? (
               <div className="w-12 h-12 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center overflow-hidden p-1.5 flex-shrink-0">
                 <img 
                   src={logoUrl} 
-                  alt={trade.symbol}
+                  alt={primarySymbol}
                   className="w-full h-full object-contain"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = 'none'
@@ -1921,13 +2053,13 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
               </div>
             ) : (
               <div className="w-12 h-12 rounded-lg bg-zinc-900/70 border border-zinc-800 flex items-center justify-center flex-shrink-0">
-                <span className="text-lg font-bold text-zinc-400">{trade.symbol.substring(0, 2)}</span>
+                <span className="text-lg font-bold text-zinc-400">{primarySymbol.substring(0, 2)}</span>
               </div>
             )
           })()}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-lg font-bold truncate">{trade.symbol}</h3>
+              <h3 className="text-lg font-bold truncate">{primarySymbol}</h3>
               {/* Category badge */}
               <div className="h-5 px-2 rounded text-[10px] bg-zinc-800/70 text-zinc-300 border border-zinc-700/50 flex-shrink-0">
                 {categoryLabels[category] || category}
@@ -1952,9 +2084,9 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
       
       {/* Status and Timeframe */}
       <div className="flex items-center gap-2 mb-4 relative z-10">
-        {timeframe && timeframe !== "N/A" && (
-          <div className="h-5 px-2 rounded text-[10px] bg-zinc-800/70 text-zinc-400 border border-zinc-700/50">
-            {timeframe}
+        {timeframeLabel && (
+          <div className={`h-5 px-2 rounded text-[10px] font-semibold border ${timeframeStyle.badge}`}>
+            {timeframeLabel}
           </div>
         )}
         <div className={`h-5 px-2 rounded text-[10px] font-medium ${
@@ -1979,21 +2111,63 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
         )}
       </div>
 
+      {(signalScore !== null || signalTier || signalRegime) && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 text-[10px] text-zinc-400">
+          {signalScore !== null && (
+            <span className={`px-2 py-0.5 rounded-full border ${signalScore >= 70 ? "border-emerald-500/40 text-emerald-200" : "border-zinc-700 text-zinc-300"}`}>
+              Score {Math.round(signalScore)}
+            </span>
+          )}
+          {signalTier && (
+            <span className="px-2 py-0.5 rounded-full border border-amber-500/40 text-amber-200">
+              Tier {signalTier}
+            </span>
+          )}
+          {signalRegime && (
+            <span className="px-2 py-0.5 rounded-full border border-blue-500/30 text-blue-200 uppercase tracking-wider">
+              {signalRegime}
+            </span>
+          )}
+        </div>
+      )}
+
+      {signalExplanation && (
+        <p className="text-xs text-zinc-400 mb-4">{signalExplanation}</p>
+      )}
+
+      {trade.status === "open" && openDuration && (
+        <p className="text-[10px] text-zinc-500 mb-3">Open for {openDuration}</p>
+      )}
+      {trade.status !== "open" && timeInTrade && (
+        <p className="text-[10px] text-zinc-500 mb-3">Time in trade: {timeInTrade}</p>
+      )}
+
       {/* Middle section: Entry/Stop Loss/Target on left, R/% on right */}
-      <div className="grid grid-cols-2 gap-4 mb-3 relative z-10">
+      <div className="grid grid-cols-2 gap-3 mb-3 relative z-10">
         {/* Left block: Entry, Stop Loss, Target */}
         <div className="space-y-2">
-          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-2.5 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
-            <p className="text-base font-bold">{formatNumber(trade.entry_price, assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2, "N/A")}</p>
+            <p className="text-base font-bold">{formatNumber(entryPrice, priceDecimals, "N/A")}</p>
           </div>
-          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-2.5 rounded-lg">
             <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
-            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2, "N/A")}</p>
+            <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, priceDecimals, "N/A")}</p>
           </div>
-          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
-            <p className="text-[10px] text-zinc-500 mb-1">Target</p>
-            <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, assetClass === 'forex' ? 5 : assetClass === 'crypto' ? 2 : 2, "N/A")}</p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-2.5 rounded-lg">
+            <p className="text-[10px] text-zinc-500 mb-1">{tpLevels.length > 1 ? "Targets" : "Target"}</p>
+            {tpLevels.length > 0 ? (
+              <div className="space-y-1 text-xs">
+                {tpLevels.map((level) => (
+                  <div key={level.label} className="flex items-center justify-between">
+                    <span className="text-zinc-400">{level.label}</span>
+                    <span className="font-semibold text-emerald-400">{formatNumber(level.value, priceDecimals)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, priceDecimals, "N/A")}</p>
+            )}
           </div>
         </div>
 
@@ -2014,7 +2188,19 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
             </p>
           </div>
           {trade.status === "open" && trade.current_price && (
-            <p className="text-[10px] text-zinc-500 mt-2">${formatNumber(trade.current_price, 2)}</p>
+            <>
+              <p className="text-[10px] text-zinc-500 mt-2">
+                Live Price
+              </p>
+              <p className="text-xl font-semibold text-white">
+                ${formatNumber(trade.current_price, priceDecimals)}
+              </p>
+              {lastPriceRefresh && (
+                <p className="text-[10px] text-zinc-600 mt-0.5">
+                  Updated {lastPriceRefresh}
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -2070,16 +2256,24 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
               </div>
             </div>
           )}
+          {nextTargetLabel && (
+            <div className="flex items-center gap-2 text-[10px] text-emerald-300 mt-2">
+              <Target className="w-3 h-3" />
+              <span>Next target: {nextTargetLabel}</span>
+            </div>
+          )}
         </div>
       )}
       
       {/* TP Hit Display - Show when TP was actually hit with timestamp and price */}
       {isTpHit && closedAt && closePrice && (
         <div className="mb-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/40 relative z-10">
-          <div className="flex items-start gap-2.5">
+            <div className="flex items-start gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
             <div className="flex-1">
-              <p className="text-xs font-semibold text-emerald-300 mb-1">TP1 Hit!</p>
+              <p className="text-xs font-semibold text-emerald-300 mb-1">
+                {trade.tp_hit_level ? `${trade.tp_hit_level.toUpperCase()} Hit!` : "Target Hit"}
+              </p>
               <div className="text-[10px] text-emerald-400/80 space-y-0.5">
                 <div className="flex items-center gap-1.5">
                   <Clock className="w-3 h-3" />
@@ -2219,6 +2413,21 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
           </div>
         )}
       </div>
+
+      {trade.signal_id && (
+        <div className="mt-4 relative z-10">
+          <Button
+            variant="outline"
+            className="w-full h-9 text-xs border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10"
+            onClick={(e) => {
+              e.stopPropagation()
+              router.push(`/?signal=${trade.signal_id}`)
+            }}
+          >
+            View original signal
+          </Button>
+        </div>
+      )}
 
       {/* Bottom row: Opened date and Closed info */}
       <div className="flex items-center justify-between text-xs text-zinc-500 pt-3 border-t border-zinc-800/50 relative z-10">

@@ -20,7 +20,8 @@ export function calculateTPProgress(trade: any, currentPrice: number): {
   nextTP: 'tp1' | 'tp2' | 'tp3' | null
 } {
   const entry = trade.entry_price || 0
-  const direction = trade.direction === 'long' ? 1 : -1
+  const normalizedDirection = (trade.direction ?? "").toString().toLowerCase()
+  const direction = normalizedDirection === 'long' ? 1 : -1
   const tp1 = trade.tp1 || 0
   const tp2 = trade.tp2 || 0
   const tp3 = trade.tp3 || 0

@@ -1,6 +1,6 @@
 import { supabaseServer } from "../supabaseServer"
 import type { Trade } from "@/lib/types"
-import { getLatestPriceForSymbols } from "@/lib/marketPrices"
+import { getLatestPriceForSymbols, LatestPriceInfo } from "@/lib/marketPrices"
 
 /**
  * Get trades for a user with computed PnL
@@ -45,11 +45,27 @@ export async function getUserTrades(userId: string, limit: number = 50): Promise
         timeframe,
         symbol_id,
         signal_id,
+        rr,
+        market,
+        signal_score,
+        quality_tier,
+        regime,
+        signal_explanation,
+        fmp_symbol,
+        display_symbol,
+        tp_hit_level,
         symbols(fmp_symbol, display_symbol, name, asset_class),
         signals(
           timeframe,
           sl,
-          tp1
+          tp1,
+          tp2,
+          tp3,
+          explanation,
+          regime,
+          score,
+          quality_tier,
+          type
         )
       `)
       .eq("user_id", userId)
@@ -76,7 +92,7 @@ export async function getUserTrades(userId: string, limit: number = 50): Promise
     ]
 
     // Fetch latest prices for all symbols
-    let priceMap: Record<string, number> = {}
+    let priceMap: Record<string, LatestPriceInfo> = {}
     if (uniqueSymbols.length > 0) {
       try {
         priceMap = await getLatestPriceForSymbols(uniqueSymbols)
@@ -90,10 +106,15 @@ export async function getUserTrades(userId: string, limit: number = 50): Promise
     allTrades.forEach((trade) => {
       if (!trade.entry_price) return
 
-      const fmpSymbol = (trade as any).symbols?.fmp_symbol || trade.symbol
-      const currentPrice = priceMap[fmpSymbol]
+      const normalizedDirection = (trade.direction ?? "").toString().toLowerCase()
+      ;(trade as any).direction = normalizedDirection === "short" ? "short" : "long"
 
-      if (!currentPrice || currentPrice <= 0) return
+      const fmpSymbol = (trade as any).symbols?.fmp_symbol || trade.symbol
+      const priceInfo = priceMap[fmpSymbol]
+
+      if (!priceInfo || !priceInfo.price || priceInfo.price <= 0) return
+
+      const currentPrice = priceInfo.price
 
       const entry = typeof trade.entry_price === "number"
         ? trade.entry_price
@@ -127,6 +148,7 @@ export async function getUserTrades(userId: string, limit: number = 50): Promise
         ;(trade as any).floating_r = rValue
         ;(trade as any).floating_pnl_percent = pnlPercent
         ;(trade as any).current_price = currentPrice
+        ;(trade as any).current_price_updated_at = priceInfo.updatedAt || new Date().toISOString()
       } else {
         // For closed trades: use stored values if they exist, otherwise compute
         if (trade.result_r === null || trade.result_r === undefined) {

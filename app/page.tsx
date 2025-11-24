@@ -424,10 +424,6 @@ export default function NextTradeUI() {
               Symbols
             </Button>
           </Link>
-          <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/5 text-emerald-400">
-            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse" />
-            Live
-          </Badge>
         </div>
       </header>
 
@@ -775,10 +771,13 @@ export default function NextTradeUI() {
                 </Badge>
               )}
               {signal.status && signal.status === "active" && (
-                <Badge variant="outline" className="h-7 px-2.5 text-[10px] border-blue-500/40 bg-blue-500/15 text-blue-400 backdrop-blur-sm animate-pulse">
-                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full mr-1.5" />
-                  ACTIVE
-                </Badge>
+                <div className="relative">
+                  <div className="absolute inset-0 bg-emerald-500/20 rounded-lg blur-sm animate-pulse" />
+                  <Badge className="h-7 px-3 text-[10px] bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/40 text-emerald-300 backdrop-blur-sm relative z-10">
+                    <div className="w-2 h-2 bg-emerald-400 rounded-full mr-1.5 animate-pulse shadow-lg shadow-emerald-400/50" />
+                    LIVE
+                  </Badge>
+                </div>
               )}
             </div>
             <p className="text-xs text-zinc-400 mb-1.5 leading-relaxed">
@@ -878,28 +877,142 @@ export default function NextTradeUI() {
     )
   }
 
-  const MyJournal = () => (
+  const MyJournal = () => {
+    const [selectedPeriod, setSelectedPeriod] = useState<"all" | "week" | "month">("all")
+    const [selectedStatus, setSelectedStatus] = useState<"all" | "open" | "closed">("all")
+    
+    // Calculate additional stats
+    const totalPnL = trades.reduce((sum, t: any) => {
+      if (t.status === "open") {
+        return sum + (t.floating_pnl_percent || 0)
+      }
+      return sum + (t.pnl_percent || 0)
+    }, 0)
+    
+    const avgWin = tradeStats.wins > 0 
+      ? trades.filter((t: any) => t.status !== "open" && (t.result_r || 0) > 0)
+          .reduce((sum, t: any) => sum + (t.result_r || 0), 0) / tradeStats.wins
+      : 0
+    
+    const avgLoss = tradeStats.losses > 0
+      ? trades.filter((t: any) => t.status !== "open" && (t.result_r || 0) < 0)
+          .reduce((sum, t: any) => sum + Math.abs(t.result_r || 0), 0) / tradeStats.losses
+      : 0
+    
+    const profitFactor = avgLoss > 0 ? (avgWin * tradeStats.wins) / (avgLoss * tradeStats.losses) : 0
+    
+    // Filter trades
+    const filteredTrades = trades.filter((trade: any) => {
+      if (selectedStatus === "open" && trade.status !== "open") return false
+      if (selectedStatus === "closed" && trade.status === "open") return false
+      return true
+    })
+
+    return (
     <div className="space-y-6 pb-28">
       <header className="flex justify-between items-center pt-2">
         <div>
-          <h1 className="text-xl font-bold">My Trades</h1>
-          <p className="text-xs text-zinc-500">Performance tracker</p>
+          <h1 className="text-xl font-bold">Trade Journal</h1>
+          <p className="text-xs text-zinc-500">Advanced performance analytics</p>
         </div>
       </header>
 
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="p-3 bg-zinc-950 border-zinc-800">
-          <p className="text-xs text-zinc-500 mb-1">Total</p>
+      {/* Enhanced Stats Grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <Card className="p-4 bg-gradient-to-br from-zinc-950 to-zinc-900 border-zinc-800">
+          <p className="text-xs text-zinc-500 mb-1">Total Trades</p>
           <p className="text-2xl font-bold">{loadingTrades ? "..." : (tradeStats?.total ?? 0)}</p>
+          <p className="text-[10px] text-zinc-600 mt-1">{tradeStats?.open ?? 0} open</p>
         </Card>
-        <Card className="p-3 bg-zinc-950 border-zinc-800">
-          <p className="text-xs text-zinc-500 mb-1">Wins</p>
-          <p className="text-2xl font-bold text-emerald-400">{loadingTrades ? "..." : (tradeStats?.wins ?? 0)}</p>
+        <Card className="p-4 bg-gradient-to-br from-zinc-950 to-zinc-900 border-zinc-800">
+          <p className="text-xs text-zinc-500 mb-1">Win Rate</p>
+          <p className="text-2xl font-bold text-emerald-400">{loadingTrades ? "..." : (tradeStats?.winRate ?? 0).toFixed(1)}%</p>
+          <p className="text-[10px] text-zinc-600 mt-1">{tradeStats?.wins ?? 0}W / {tradeStats?.losses ?? 0}L</p>
         </Card>
-        <Card className="p-3 bg-zinc-950 border-zinc-800">
-          <p className="text-xs text-zinc-500 mb-1">Losses</p>
-          <p className="text-2xl font-bold text-rose-400">{loadingTrades ? "..." : (tradeStats?.losses ?? 0)}</p>
+        <Card className="p-4 bg-gradient-to-br from-zinc-950 to-zinc-900 border-zinc-800">
+          <p className="text-xs text-zinc-500 mb-1">Total P&L</p>
+          <p className={`text-2xl font-bold ${totalPnL >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+            {loadingTrades ? "..." : (totalPnL >= 0 ? "+" : "")}{totalPnL.toFixed(2)}%
+          </p>
+          <p className="text-[10px] text-zinc-600 mt-1">All trades</p>
         </Card>
+        <Card className="p-4 bg-gradient-to-br from-zinc-950 to-zinc-900 border-zinc-800">
+          <p className="text-xs text-zinc-500 mb-1">Profit Factor</p>
+          <p className={`text-2xl font-bold ${profitFactor >= 1 ? "text-emerald-400" : "text-rose-400"}`}>
+            {loadingTrades ? "..." : profitFactor.toFixed(2)}
+          </p>
+          <p className="text-[10px] text-zinc-600 mt-1">Avg {avgWin.toFixed(2)}R / {avgLoss.toFixed(2)}R</p>
+        </Card>
+      </div>
+
+      {/* Performance Insights */}
+      {trades.length > 0 && (
+        <Card className="p-4 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800">
+          <h3 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-400" />
+            Performance Insights
+          </h3>
+          <div className="space-y-2 text-xs">
+            {profitFactor >= 1.5 && (
+              <div className="flex items-center gap-2 text-emerald-400">
+                <Check className="w-3 h-3" />
+                <span>Excellent profit factor - your strategy is profitable!</span>
+              </div>
+            )}
+            {tradeStats.winRate >= 60 && (
+              <div className="flex items-center gap-2 text-emerald-400">
+                <Check className="w-3 h-3" />
+                <span>High win rate - consistent performance</span>
+              </div>
+            )}
+            {avgWin > avgLoss * 1.5 && (
+              <div className="flex items-center gap-2 text-emerald-400">
+                <Check className="w-3 h-3" />
+                <span>Good risk/reward ratio - letting winners run</span>
+              </div>
+            )}
+            {tradeStats.open > 0 && (
+              <div className="flex items-center gap-2 text-blue-400">
+                <TrendingUp className="w-3 h-3" />
+                <span>{tradeStats.open} open position{tradeStats.open > 1 ? 's' : ''} - monitor closely</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Filters */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setSelectedStatus("all")}
+          className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+            selectedStatus === "all"
+              ? "bg-emerald-500 text-black"
+              : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+          }`}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setSelectedStatus("open")}
+          className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+            selectedStatus === "open"
+              ? "bg-emerald-500 text-black"
+              : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+          }`}
+        >
+          Open ({tradeStats?.open ?? 0})
+        </button>
+        <button
+          onClick={() => setSelectedStatus("closed")}
+          className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+            selectedStatus === "closed"
+              ? "bg-emerald-500 text-black"
+              : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+          }`}
+        >
+          Closed ({((tradeStats?.total ?? 0) - (tradeStats?.open ?? 0))})
+        </button>
       </div>
 
       <section>
@@ -916,13 +1029,13 @@ export default function NextTradeUI() {
           <Card className="p-6 bg-zinc-950 border-zinc-800 text-center">
             <p className="text-zinc-500">Connect your Telegram account in the Account tab to start tracking your trades.</p>
           </Card>
-        ) : trades.length === 0 ? (
+        ) : filteredTrades.length === 0 ? (
           <Card className="p-6 bg-zinc-950 border-zinc-800 text-center">
-            <p className="text-zinc-500">No trades recorded yet. Start by taking signals!</p>
+            <p className="text-zinc-500">No {selectedStatus === "open" ? "open" : selectedStatus === "closed" ? "closed" : ""} trades found.</p>
           </Card>
         ) : (
           <div className="space-y-3">
-            {trades.map((trade: any) => {
+            {filteredTrades.map((trade: any) => {
               // Extract signal data (joined from signals table)
               const signal = trade.signals || {}
               const timeframe = signal.timeframe || trade.timeframe || "N/A"
@@ -961,10 +1074,35 @@ export default function NextTradeUI() {
               const currentPercent = trade.status === "open" ? (trade.floating_pnl_percent ?? 0) : (trade.pnl_percent ?? 0)
 
               return (
-                <Card key={trade.id} className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
+                <Card key={trade.id} className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-950 to-zinc-900 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group">
+                  {/* Background gradient based on performance */}
+                  <div className={`absolute inset-0 opacity-5 group-hover:opacity-10 transition-opacity ${
+                    currentR >= 0
+                      ? "bg-gradient-to-br from-emerald-500/20 via-emerald-400/10 to-transparent"
+                      : "bg-gradient-to-br from-rose-500/20 via-rose-400/10 to-transparent"
+                  }`} />
+                  
                   {/* Header row: symbol + direction pill + timeframe + status pill */}
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    <h3 className="text-lg font-bold">{trade.symbol}</h3>
+                  <div className="flex items-center gap-2 mb-4 flex-wrap relative z-10">
+                    <div className="flex items-center gap-2">
+                      {/* Symbol logo */}
+                      {(() => {
+                        const logoUrl = getSymbolLogo(trade.symbol, (trade as any).symbols?.asset_class)
+                        return logoUrl ? (
+                          <div className="w-8 h-8 rounded-lg bg-zinc-900/50 border border-zinc-800 flex items-center justify-center overflow-hidden p-1">
+                            <img 
+                              src={logoUrl} 
+                              alt={trade.symbol}
+                              className="w-full h-full object-contain"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none'
+                              }}
+                            />
+                          </div>
+                        ) : null
+                      })()}
+                      <h3 className="text-lg font-bold">{trade.symbol}</h3>
+                    </div>
                     <Badge
                       variant="outline"
                       className={`h-5 text-[10px] ${
@@ -1000,32 +1138,32 @@ export default function NextTradeUI() {
                   <div className="grid grid-cols-2 gap-4 mb-3">
                     {/* Left block: Entry, Stop Loss, Target */}
                     <div className="space-y-2">
-                      <div className="bg-zinc-900 p-2 rounded-lg">
-                        <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
-                        <p className="text-sm font-bold">{formatNumber(trade.entry_price, 2, "N/A")}</p>
+                      <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+                        <p className="text-[10px] text-zinc-500 mb-1">Entry</p>
+                        <p className="text-base font-bold">{formatNumber(trade.entry_price, 2, "N/A")}</p>
                       </div>
-                      <div className="bg-zinc-900 p-2 rounded-lg">
-                        <p className="text-[10px] text-zinc-500 mb-0.5">Stop Loss</p>
-                        <p className="text-sm font-bold text-rose-400">{formatNumber(stopLoss, 2, "N/A")}</p>
+                      <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+                        <p className="text-[10px] text-zinc-500 mb-1">Stop Loss</p>
+                        <p className="text-base font-bold text-rose-400">{formatNumber(stopLoss, 2, "N/A")}</p>
                       </div>
-                      <div className="bg-zinc-900 p-2 rounded-lg">
-                        <p className="text-[10px] text-zinc-500 mb-0.5">Target</p>
-                        <p className="text-sm font-bold text-emerald-400">{formatNumber(targetPrice, 2, "N/A")}</p>
+                      <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800/50 p-3 rounded-lg">
+                        <p className="text-[10px] text-zinc-500 mb-1">Target</p>
+                        <p className="text-base font-bold text-emerald-400">{formatNumber(targetPrice, 2, "N/A")}</p>
                       </div>
                     </div>
 
                     {/* Right block: Current R and Current %} */}
                     <div className={`flex flex-col justify-center items-end ${currentR >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      <div className="mb-2">
-                        <p className="text-[10px] text-zinc-500 mb-0.5 text-right">Current R</p>
-                        <p className="text-2xl font-bold">
+                      <div className="mb-3 text-center">
+                        <p className="text-[10px] text-zinc-500 mb-1">Current R</p>
+                        <p className="text-3xl font-bold">
                           {currentR > 0 ? "+" : ""}
                           {formatNumber(currentR, 2, "0.00")}R
                         </p>
                       </div>
-                      <div>
-                        <p className="text-[10px] text-zinc-500 mb-0.5 text-right">Current %</p>
-                        <p className="text-xl font-semibold">
+                      <div className="text-center">
+                        <p className="text-[10px] text-zinc-500 mb-1">Current %</p>
+                        <p className="text-2xl font-semibold">
                           {currentPercent > 0 ? "+" : ""}
                           {formatNumber(currentPercent, 2, "0.00")}%
                         </p>
@@ -1052,7 +1190,8 @@ export default function NextTradeUI() {
         )}
       </section>
     </div>
-  )
+    )
+  }
 
   const AICopilot = () => {
     type ChatMessage = {

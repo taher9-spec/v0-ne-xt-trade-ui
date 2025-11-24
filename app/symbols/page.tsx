@@ -26,6 +26,7 @@ type Symbol = {
 type SymbolWithPrice = Symbol & {
   currentPrice: number | null
   priceChange: number | null
+  lastPriceUpdate: string | null
   activeSignal: Signal | null
 }
 
@@ -144,6 +145,7 @@ export default function SymbolsPage() {
                 symbolId: symbol.id,
                 price: data.price ? parseFloat(String(data.price)) : null,
                 change: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
+                timestamp: new Date().toISOString(),
               }
             }
           } catch (e) {
@@ -154,18 +156,19 @@ export default function SymbolsPage() {
 
         const priceResults = await Promise.all(pricePromises)
         const priceMap = new Map(
-          priceResults.map((r) => [r.symbolId, { price: r.price, change: r.change }])
+          priceResults.map((r) => [r.symbolId, { price: r.price, change: r.change, timestamp: r.timestamp }])
         )
 
         // Combine symbols with prices and signals
         const symbolsWithData: SymbolWithPrice[] = symbols.map((symbol) => {
-          const priceData = priceMap.get(symbol.id) || { price: null, change: null }
+          const priceData = priceMap.get(symbol.id) || { price: null, change: null, timestamp: null }
           const activeSignal = signalMap.get(symbol.id) || null
 
           return {
             ...symbol,
             currentPrice: priceData.price,
             priceChange: priceData.change,
+            lastPriceUpdate: priceData.timestamp,
             activeSignal,
           }
         })
@@ -189,6 +192,7 @@ export default function SymbolsPage() {
                           ...s,
                           currentPrice: data.price ? parseFloat(String(data.price)) : null,
                           priceChange: data.changesPercentage ? parseFloat(String(data.changesPercentage)) : null,
+                          lastPriceUpdate: new Date().toISOString(),
                         }
                       : s
                   )
@@ -499,19 +503,26 @@ function SymbolCard({
                 ${formatNumber(symbol.currentPrice, symbol.asset_class === "forex" ? 5 : 2)}
               </p>
               {symbol.priceChange !== null && (
-                <p
-                  className={`text-sm font-semibold flex items-center gap-1 ${
-                    symbol.priceChange >= 0 ? "text-emerald-400" : "text-rose-400"
-                  }`}
-                >
-                  {symbol.priceChange >= 0 ? (
-                    <TrendingUp className="w-3 h-3" />
-                  ) : (
-                    <TrendingDown className="w-3 h-3" />
+                <div>
+                  <p
+                    className={`text-sm font-semibold flex items-center gap-1 ${
+                      symbol.priceChange >= 0 ? "text-emerald-400" : "text-rose-400"
+                    }`}
+                  >
+                    {symbol.priceChange >= 0 ? (
+                      <TrendingUp className="w-3 h-3" />
+                    ) : (
+                      <TrendingDown className="w-3 h-3" />
+                    )}
+                    {symbol.priceChange >= 0 ? "+" : ""}
+                    {formatNumber(symbol.priceChange, 2)}%
+                  </p>
+                  {symbol.lastPriceUpdate && (
+                    <p className="text-[9px] text-zinc-600 mt-0.5">
+                      {new Date(symbol.lastPriceUpdate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
                   )}
-                  {symbol.priceChange >= 0 ? "+" : ""}
-                  {formatNumber(symbol.priceChange, 2)}%
-                </p>
+                </div>
               )}
             </>
           ) : (
@@ -519,26 +530,15 @@ function SymbolCard({
           )}
         </div>
 
-        {/* Signal Preview */}
-        {symbol.activeSignal && (
+        {/* Signal Preview - Only show if there's actually an active signal from database */}
+        {symbol.activeSignal && symbol.activeSignal.id && (
           <div className="text-right">
-            <p className="text-xs text-zinc-500 mb-1">Active Signal</p>
-            <div className="flex items-center gap-1">
-              <Badge
-                variant="outline"
-                className={`h-4 text-[9px] ${
-                  symbol.activeSignal.direction === "long"
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                    : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                }`}
-              >
-                {symbol.activeSignal.direction.toUpperCase()}
+            <div className="relative inline-block">
+              <div className="absolute inset-0 bg-emerald-500/20 rounded-lg blur-sm animate-pulse" />
+              <Badge className="h-5 px-2 text-[9px] bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/40 text-emerald-300 backdrop-blur-sm relative z-10">
+                <Sparkles className="w-2.5 h-2.5 mr-1" />
+                Signal
               </Badge>
-              {symbol.activeSignal.timeframe && (
-                <Badge variant="outline" className="h-4 text-[9px] border-zinc-700 text-zinc-400">
-                  {symbol.activeSignal.timeframe}
-                </Badge>
-              )}
             </div>
           </div>
         )}

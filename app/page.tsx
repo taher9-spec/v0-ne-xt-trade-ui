@@ -813,18 +813,18 @@ export default function NextTradeUI() {
     const tfBadgeStyle = getTimeframeBadgeStyle(signal.timeframe)
 
     return (
-      <Card className={`p-4 pt-5 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-visible group ${
+      <Card className={`p-4 pt-3 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-visible group ${
         direction === "long"
           ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
           : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
       }`}>
-        {/* Timeframe Badge - Top Center, Slightly Popping Out */}
+        {/* Timeframe Badge - Top Center, Compact */}
         {signal.timeframe && (
-          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-30">
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-30">
             <div 
-              className={`px-2.5 py-0.5 rounded-full ${tfBadgeStyle.bg} border ${tfBadgeStyle.border} backdrop-blur-sm shadow-lg`}
+              className={`px-2 py-0.5 rounded-full ${tfBadgeStyle.bg} border ${tfBadgeStyle.border} backdrop-blur-sm shadow-md`}
             >
-              <span className={`text-[9px] font-bold ${tfBadgeStyle.text} tracking-wide`}>{signal.timeframe.toUpperCase()}</span>
+              <span className={`text-[8px] font-semibold ${tfBadgeStyle.text} tracking-wide`}>{signal.timeframe.toUpperCase()}</span>
             </div>
           </div>
         )}
@@ -876,9 +876,9 @@ export default function NextTradeUI() {
         {/* Subtle pattern overlay */}
         <div className="absolute inset-0 opacity-[0.02] bg-[radial-gradient(circle_at_1px_1px,rgb(255,255,255)_1px,transparent_0)] bg-[length:20px_20px]" />
         
-        <div className="flex items-start justify-between mb-3 relative z-10 pl-9">
+        <div className="flex items-start justify-between mb-3 relative z-10">
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1.5">
+            <div className="flex items-center gap-2 mb-1">
               {/* Real symbol logo */}
               {logoUrl && !logoError ? (
                 <div className="w-9 h-9 rounded-lg bg-zinc-900/50 border border-zinc-800 flex items-center justify-center overflow-hidden p-0.5">

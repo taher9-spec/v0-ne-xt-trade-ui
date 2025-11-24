@@ -797,38 +797,35 @@ export default function NextTradeUI() {
     const volatility = priceChange !== null ? Math.min(100, Math.abs(priceChange) * 20) : 0
     const volatilityColor = volatility > 70 ? 'rose' : volatility > 40 ? 'yellow' : 'emerald'
 
-    // Get pinball color based on timeframe
-    const getPinballColor = (tf: string | null | undefined) => {
-      if (!tf) return { bg: "from-zinc-500 to-zinc-600", glow: "shadow-zinc-500/30" }
+    // Get timeframe badge style
+    const getTimeframeBadgeStyle = (tf: string | null | undefined) => {
+      if (!tf) return { bg: "bg-zinc-800/80", border: "border-zinc-600/50", text: "text-zinc-300" }
       const key = tf.toLowerCase()
       switch (key) {
-        case "5m": return { bg: "from-cyan-400 to-blue-500", glow: "shadow-cyan-500/40" }
-        case "15m": return { bg: "from-indigo-400 to-purple-500", glow: "shadow-purple-500/40" }
-        case "1h": return { bg: "from-amber-400 to-orange-500", glow: "shadow-amber-500/40" }
-        case "4h": return { bg: "from-rose-400 to-pink-500", glow: "shadow-rose-500/40" }
-        case "1d": return { bg: "from-sky-400 to-slate-500", glow: "shadow-sky-500/40" }
-        default: return { bg: "from-emerald-400 to-teal-500", glow: "shadow-emerald-500/40" }
+        case "5m": return { bg: "bg-cyan-950/80", border: "border-cyan-500/40", text: "text-cyan-400" }
+        case "15m": return { bg: "bg-purple-950/80", border: "border-purple-500/40", text: "text-purple-400" }
+        case "1h": return { bg: "bg-amber-950/80", border: "border-amber-500/40", text: "text-amber-400" }
+        case "4h": return { bg: "bg-rose-950/80", border: "border-rose-500/40", text: "text-rose-400" }
+        case "1d": return { bg: "bg-sky-950/80", border: "border-sky-500/40", text: "text-sky-400" }
+        default: return { bg: "bg-emerald-950/80", border: "border-emerald-500/40", text: "text-emerald-400" }
       }
     }
-    const pinballStyle = getPinballColor(signal.timeframe)
+    const tfBadgeStyle = getTimeframeBadgeStyle(signal.timeframe)
 
     return (
-      <Card className={`p-4 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden group ${
+      <Card className={`p-4 pt-5 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-visible group ${
         direction === "long"
           ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
           : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
       }`}>
-        {/* Pinball Timeframe Badge - Top Left */}
+        {/* Timeframe Badge - Top Center, Slightly Popping Out */}
         {signal.timeframe && (
-          <div className="absolute -top-1 -left-1 z-30">
-            <motion.div 
-              className={`w-11 h-11 rounded-full bg-gradient-to-br ${pinballStyle.bg} shadow-lg ${pinballStyle.glow} flex items-center justify-center`}
-              initial={{ scale: 0.8 }}
-              animate={{ scale: [1, 1.05, 1] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-30">
+            <div 
+              className={`px-2.5 py-0.5 rounded-full ${tfBadgeStyle.bg} border ${tfBadgeStyle.border} backdrop-blur-sm shadow-lg`}
             >
-              <span className="text-[10px] font-black text-white drop-shadow-md">{signal.timeframe.toUpperCase()}</span>
-            </motion.div>
+              <span className={`text-[9px] font-bold ${tfBadgeStyle.text} tracking-wide`}>{signal.timeframe.toUpperCase()}</span>
+            </div>
           </div>
         )}
         {/* Blur overlay for locked signals */}
@@ -2139,38 +2136,35 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
     return `${tpProgress.nextTP.toUpperCase()} @ ${formatNumber(nextTarget, priceDecimals)}`
   })()
 
-  // Get pinball color based on timeframe
-  const getPinballColor = (tf: string | null) => {
-    if (!tf) return { bg: "from-zinc-500 to-zinc-600", glow: "shadow-zinc-500/30" }
+  // Get timeframe badge style
+  const getTimeframeBadgeStyle = (tf: string | null) => {
+    if (!tf) return { bg: "bg-zinc-800/80", border: "border-zinc-600/50", text: "text-zinc-300" }
     const key = tf.toLowerCase()
     switch (key) {
-      case "5m": return { bg: "from-cyan-400 to-blue-500", glow: "shadow-cyan-500/40" }
-      case "15m": return { bg: "from-indigo-400 to-purple-500", glow: "shadow-purple-500/40" }
-      case "1h": return { bg: "from-amber-400 to-orange-500", glow: "shadow-amber-500/40" }
-      case "4h": return { bg: "from-rose-400 to-pink-500", glow: "shadow-rose-500/40" }
-      case "1d": return { bg: "from-sky-400 to-slate-500", glow: "shadow-sky-500/40" }
-      default: return { bg: "from-emerald-400 to-teal-500", glow: "shadow-emerald-500/40" }
+      case "5m": return { bg: "bg-cyan-950/80", border: "border-cyan-500/40", text: "text-cyan-400" }
+      case "15m": return { bg: "bg-purple-950/80", border: "border-purple-500/40", text: "text-purple-400" }
+      case "1h": return { bg: "bg-amber-950/80", border: "border-amber-500/40", text: "text-amber-400" }
+      case "4h": return { bg: "bg-rose-950/80", border: "border-rose-500/40", text: "text-rose-400" }
+      case "1d": return { bg: "bg-sky-950/80", border: "border-sky-500/40", text: "text-sky-400" }
+      default: return { bg: "bg-emerald-950/80", border: "border-emerald-500/40", text: "text-emerald-400" }
     }
   }
-  const pinballStyle = getPinballColor(timeframe)
+  const tfBadgeStyle = getTimeframeBadgeStyle(timeframe)
 
   return (
-    <Card className={`p-2.5 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-hidden ${
+    <Card className={`p-2.5 pt-4 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-visible ${
       direction === "long"
         ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
         : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
     }`}>
-      {/* Pinball Timeframe Badge - Top Left */}
+      {/* Timeframe Badge - Top Center, Slightly Popping Out */}
       {timeframeLabel && (
-        <div className="absolute -top-1 -left-1 z-20">
-          <motion.div 
-            className={`w-10 h-10 rounded-full bg-gradient-to-br ${pinballStyle.bg} shadow-lg ${pinballStyle.glow} flex items-center justify-center`}
-            initial={{ scale: 0.8 }}
-            animate={{ scale: [1, 1.05, 1] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+        <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20">
+          <div 
+            className={`px-2 py-0.5 rounded-full ${tfBadgeStyle.bg} border ${tfBadgeStyle.border} backdrop-blur-sm shadow-lg`}
           >
-            <span className="text-[10px] font-black text-white drop-shadow-md">{timeframeLabel}</span>
-          </motion.div>
+            <span className={`text-[8px] font-bold ${tfBadgeStyle.text} tracking-wide`}>{timeframeLabel}</span>
+          </div>
         </div>
       )}
       
@@ -2189,7 +2183,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
       </div>
       
       {/* Header: Logo, Symbol, Category, Direction */}
-      <div className="flex items-center justify-between mb-2 relative z-10 pl-8">
+      <div className="flex items-center justify-between mb-2 relative z-10">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {/* Symbol logo */}
           {(() => {

@@ -282,53 +282,46 @@ export default function SymbolsPage() {
 
         setSymbolsWithData(symbolsWithData)
 
-        // Refresh prices every 10 seconds from live_prices table
-        const interval = setInterval(async () => {
-          try {
-            const fmpSymbols = symbols.map(s => s.fmp_symbol)
-            const { data: livePricesData } = await supabase
-              .from("live_prices")
-              .select("fmp_symbol, symbol, price, change, change_percent, volume, updated_at")
-              .in("fmp_symbol", fmpSymbols)
-
-            if (livePricesData) {
-              const newPriceMap = new Map<string, any>()
-              livePricesData.forEach((lp: any) => {
-                newPriceMap.set(lp.fmp_symbol, {
-                  price: lp.price ? parseFloat(String(lp.price)) : null,
-                  changePercent: lp.change_percent ? parseFloat(String(lp.change_percent)) : null,
-                  changeDollar: lp.change ? parseFloat(String(lp.change)) : null,
-                  timestamp: lp.updated_at,
-                  volume: lp.volume ? parseInt(String(lp.volume)) : null,
-                })
-              })
-
-              setSymbolsWithData((prev) =>
-                prev.map((s) => {
-                  const priceData = newPriceMap.get(s.fmp_symbol)
-                  if (priceData) {
-                    return {
-                      ...s,
-                      currentPrice: priceData.price,
-                      priceChangePercent: priceData.changePercent,
-                      priceChangeDollar: priceData.changeDollar,
-                      lastPriceUpdate: priceData.timestamp,
-                      volatility: priceData.changePercent !== null 
-                        ? Math.min(100, Math.abs(priceData.changePercent) * 20) 
-                        : s.volatility,
-                      volume: priceData.volume,
+        // Subscribe to real-time price updates from live_prices table
+        const channel = supabase
+          .channel('live_prices_changes')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'live_prices'
+            },
+            (payload: any) => {
+              const newData = payload.new
+              if (newData && newData.fmp_symbol) {
+                setSymbolsWithData((prev) =>
+                  prev.map((s) => {
+                    if (s.fmp_symbol === newData.fmp_symbol) {
+                      const changePercent = newData.change_percent ? parseFloat(String(newData.change_percent)) : null
+                      return {
+                        ...s,
+                        currentPrice: newData.price ? parseFloat(String(newData.price)) : s.currentPrice,
+                        priceChangePercent: changePercent,
+                        priceChangeDollar: newData.change ? parseFloat(String(newData.change)) : s.priceChangeDollar,
+                        lastPriceUpdate: newData.updated_at,
+                        volatility: changePercent !== null 
+                          ? Math.min(100, Math.abs(changePercent) * 20) 
+                          : s.volatility,
+                        volume: newData.volume ? parseInt(String(newData.volume)) : s.volume,
+                      }
                     }
-                  }
-                  return s
-                })
-              )
+                    return s
+                  })
+                )
+              }
             }
-          } catch (e) {
-            // Silent fail for price updates
-          }
-        }, 10000)
+          )
+          .subscribe()
 
-        return () => clearInterval(interval)
+        return () => {
+          supabase.removeChannel(channel)
+        }
       } catch (e: any) {
         console.error("[symbols] Failed to fetch prices/signals:", e)
       }

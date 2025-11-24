@@ -179,7 +179,8 @@ SELECT cron.schedule(
     net.http_post(
       url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/smart-endpoint',
       headers := '{"Content-Type": "application/json", "Authorization": "Bearer YOUR_ANON_KEY"}'::jsonb,
-      body := '{"source": "cron", "timeframes": ["1min", "5min"]}'::jsonb
+      body := '{"source": "cron", "timeframes": ["1min", "5min"]}'::jsonb,
+      timeout_milliseconds := 60000
     ) AS request_id;
   $$
 );
@@ -212,8 +213,12 @@ SELECT cron.schedule(
   SELECT
     net.http_post(
       url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/smart-endpoint',
-      headers := '{"Content-Type": "application/json", "Authorization": "Bearer YOUR_ANON_KEY"}'::jsonb,
-      body := '{"source": "cron", "timeframes": ["4h", "1day"]}'::jsonb
+      headers := jsonb_build_object(
+        'Content-Type', 'application/json',
+        'Authorization', 'Bearer YOUR_ANON_KEY'
+      ),
+      body := '{"source": "cron", "timeframes": ["4h", "1day"]}'::jsonb,
+      timeout_milliseconds := 60000
     ) AS request_id;
   $$
 );

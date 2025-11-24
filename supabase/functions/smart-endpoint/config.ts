@@ -4,12 +4,28 @@
 
 export type InstrumentType = 'crypto' | 'forex' | 'index' | 'stock' | 'commodity' | 'metal'
 
-export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d'
+export type Timeframe = '5m' | '15m' | '1h' | '4h' | '1d'
+
+export type SignalStyle = 'scalp' | 'intraday' | 'swing'
 
 export interface SymbolConfig {
-  symbol: string
+  symbol: string            // FMP Ticker
   type: InstrumentType
   enabledTimeframes: Timeframe[]
+}
+
+export interface RiskConfig {
+  atrMultipleSL: number
+  rrTarget: number
+}
+
+export const RISK_CONFIG: Record<InstrumentType, RiskConfig> = {
+  forex:     { atrMultipleSL: 1.5, rrTarget: 2.0 },
+  index:     { atrMultipleSL: 1.5, rrTarget: 1.8 },
+  stock:     { atrMultipleSL: 2.0, rrTarget: 2.5 },
+  crypto:    { atrMultipleSL: 2.5, rrTarget: 3.0 },
+  commodity: { atrMultipleSL: 2.0, rrTarget: 2.5 },
+  metal:     { atrMultipleSL: 1.5, rrTarget: 2.0 },
 }
 
 /**
@@ -20,7 +36,7 @@ export const SYMBOLS: SymbolConfig[] = [
   { symbol: 'BTCUSD', type: 'crypto', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'ETHUSD', type: 'crypto', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   
-  // Forex
+  // Forex - Major pairs
   { symbol: 'EURUSD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'GBPUSD', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
   { symbol: 'USDJPY', type: 'forex', enabledTimeframes: ['5m', '15m', '1h', '4h'] },
@@ -47,8 +63,8 @@ export const SYMBOLS: SymbolConfig[] = [
   { symbol: '^IXIC', type: 'index', enabledTimeframes: ['1h', '4h', '1d'] },
 ]
 
-export function inferSignalType(tf: Timeframe): 'scalp' | 'intraday' | 'swing' {
-  if (tf === '1m' || tf === '5m') return 'scalp'
+export function inferSignalType(tf: Timeframe): SignalStyle {
+  if (tf === '5m') return 'scalp'
   if (tf === '15m' || tf === '1h') return 'intraday'
   return 'swing'
 }

@@ -20,7 +20,9 @@ export async function GET(req: NextRequest) {
 
     const searchParams = req.nextUrl.searchParams
     const limit = parseInt(searchParams.get("limit") || "100", 10)
+    const offset = parseInt(searchParams.get("offset") || "0", 10)
     const statusFilter = searchParams.get("status") || "all" // all | active | history
+    const symbolFilter = searchParams.get("symbol") // Optional symbol filter
 
     let supabase
     try {
@@ -43,7 +45,12 @@ export async function GET(req: NextRequest) {
     }
     // "all" = no status filter
 
-    query = query.order("created_at", { ascending: false }).limit(limit)
+    // Apply symbol filter if provided
+    if (symbolFilter) {
+      query = query.eq("symbol", symbolFilter)
+    }
+
+    query = query.order("created_at", { ascending: false }).range(offset, offset + limit - 1)
 
     const { data, error } = await query
 

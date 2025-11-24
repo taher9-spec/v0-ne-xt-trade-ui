@@ -192,8 +192,17 @@ export default function NextTradeUI() {
         }
       }
       fetchTrades()
+
+      // Poll for live PnL updates every 15 seconds when Journal tab is active
+      const interval = setInterval(() => {
+        if (activeTab === "journal" && user) {
+          fetchTrades()
+        }
+      }, 15000) // 15 seconds
+
+      return () => clearInterval(interval)
     }
-  }, [activeTab])
+  }, [activeTab, user])
 
   useEffect(() => {
     if (activeTab === "account") {
@@ -509,6 +518,34 @@ export default function NextTradeUI() {
   const SignalCard = ({ signal }: { signal: Signal }) => {
     const [taken, setTaken] = useState(false)
     const [loading, setLoading] = useState(false)
+    const [checkingTrade, setCheckingTrade] = useState(true)
+
+    // Check if user already has an open trade for this signal
+    useEffect(() => {
+      if (!user || !signal.id) {
+        setCheckingTrade(false)
+        return
+      }
+
+      const checkExistingTrade = async () => {
+        try {
+          const res = await fetch("/api/trades/list", { cache: "no-store" })
+          if (res.ok) {
+            const data = await res.json()
+            const hasOpenTrade = (data.trades || []).some(
+              (t: Trade) => t.signal_id === signal.id && t.status === "open"
+            )
+            setTaken(hasOpenTrade)
+          }
+        } catch (e) {
+          console.error("[v0] Failed to check existing trade", e)
+        } finally {
+          setCheckingTrade(false)
+        }
+      }
+
+      checkExistingTrade()
+    }, [user, signal.id])
 
     const handleTakeSignal = async () => {
       if (!user) {
@@ -527,8 +564,24 @@ export default function NextTradeUI() {
         if (res.ok) {
           setTaken(true)
           console.log("[v0] Signal marked as taken:", signal.symbol)
+          // Refresh trades list to update Journal
+          if (activeTab === "journal") {
+            const tradesRes = await fetch("/api/trades/list", { cache: "no-store" })
+            if (tradesRes.ok) {
+              const tradesData = await tradesRes.json()
+              setTrades(tradesData.trades ?? [])
+              setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
+            }
+          }
         } else if (res.status === 401) {
           setActiveTab("account")
+        } else {
+          const errorData = await res.json().catch(() => ({}))
+          if (errorData.error === "You already took this signal") {
+            setTaken(true)
+          } else {
+            alert(errorData.error || "Failed to save trade. Please try again.")
+          }
         }
       } catch (e) {
         console.error("[v0] Failed to mark trade taken", e)
@@ -601,10 +654,10 @@ export default function NextTradeUI() {
           className={`w-full h-9 text-xs font-semibold ${
             taken ? "bg-zinc-800 text-zinc-400 cursor-not-allowed" : "bg-emerald-500 hover:bg-emerald-600 text-black"
           }`}
-          disabled={taken || loading}
+          disabled={taken || loading || checkingTrade}
           onClick={handleTakeSignal}
         >
-          {loading ? "Saving..." : taken ? "Signal Taken" : "Take Signal"}
+          {checkingTrade ? "Checking..." : loading ? "Saving..." : taken ? "Signal Taken" : "Take Signal"}
         </Button>
       </Card>
     )

@@ -1,18 +1,21 @@
 # Security Implementation Guide
 
 ## Overview
+
 This document outlines the security measures implemented in the NeXT TRADE Telegram mini app.
 
 ## Authentication & Authorization
 
 ### Telegram Login Widget
-- **Implementation**: Official Telegram Login Widget (https://core.telegram.org/widgets/login)
+
+- **Implementation**: Official Telegram Login Widget (<https://core.telegram.org/widgets/login>)
 - **Hash Verification**: HMAC-SHA256 using bot token
 - **Auth Date Validation**: Prevents replay attacks (24-hour window)
 - **Rate Limiting**: 5 auth attempts per IP per 15 minutes
 
 ### Session Management
-- **Cookie Security**: 
+
+- **Cookie Security**:
   - `httpOnly: true` (prevents XSS)
   - `secure: true` in production (HTTPS only)
   - `sameSite: "lax"` (CSRF protection)
@@ -23,6 +26,7 @@ This document outlines the security measures implemented in the NeXT TRADE Teleg
 ## Data Collection
 
 ### User Data Collected (Telegram Mini App)
+
 1. **telegram_id** (required) - Unique Telegram user ID
 2. **username** (optional) - Telegram username
 3. **full_name** (optional) - First + Last name from Telegram
@@ -33,6 +37,7 @@ This document outlines the security measures implemented in the NeXT TRADE Teleg
 8. **session_expires_at** - Session management
 
 ### Security Fields
+
 - All user inputs are sanitized and length-limited
 - Photo URLs validated (must be HTTPS, preferably Telegram CDN)
 - Telegram ID validated (numeric only)
@@ -40,11 +45,13 @@ This document outlines the security measures implemented in the NeXT TRADE Teleg
 ## Rate Limiting
 
 ### Implemented Limits
+
 1. **Authentication**: 5 attempts per IP per 15 minutes
 2. **AI Copilot**: 20 requests per user/IP per minute
 3. **Trade Actions**: 10 trades per user per minute
 
 ### Implementation
+
 - In-memory rate limiter (simple, effective for single-server deployments)
 - For production scale, consider Redis-based rate limiting
 - Automatic cleanup of expired entries
@@ -52,6 +59,7 @@ This document outlines the security measures implemented in the NeXT TRADE Teleg
 ## Security Headers
 
 All authenticated responses include:
+
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `X-XSS-Protection: 1; mode=block`
@@ -60,6 +68,7 @@ All authenticated responses include:
 ## Input Validation
 
 ### Telegram Auth Parameters
+
 - `id`: Must be numeric (Telegram user ID)
 - `first_name`, `last_name`: Trimmed, max 100 chars
 - `username`: Trimmed, max 50 chars
@@ -67,6 +76,7 @@ All authenticated responses include:
 - `auth_date`: Validated timestamp
 
 ### API Request Validation
+
 - All user inputs sanitized
 - SQL injection prevention via Supabase parameterized queries
 - XSS prevention via React's built-in escaping
@@ -74,11 +84,13 @@ All authenticated responses include:
 ## Database Security
 
 ### Row Level Security (RLS)
+
 - Enabled on all tables
 - Users can only access their own data
 - Public read access for signals and plans only
 
 ### Audit Trail
+
 - `last_auth_date`: When user last authenticated
 - `last_login_ip`: IP address of last login
 - `session_expires_at`: When session expires
@@ -86,6 +98,7 @@ All authenticated responses include:
 ## Error Handling
 
 ### Security-Conscious Error Messages
+
 - Generic error messages to users
 - Detailed logging server-side only
 - No sensitive data in error responses
@@ -104,10 +117,11 @@ All authenticated responses include:
 ## API Error Handling
 
 ### OpenAI API Errors
+
 - **401 Unauthorized**: API key is invalid or expired
   - Check `.env.local` for correct `OPENAI_API_KEY`
   - Ensure no quotes around the key value
-  - Verify key is active at https://platform.openai.com/account/api-keys
+  - Verify key is active at <https://platform.openai.com/account/api-keys>
   - Restart dev server after changing `.env.local`
 - **429 Rate Limit**: Too many requests
   - Automatic retry-after header
@@ -130,4 +144,3 @@ All authenticated responses include:
 - Follows Telegram's official authentication guidelines
 - Implements security best practices for web applications
 - GDPR-ready (minimal data collection, user control)
-

@@ -7,11 +7,13 @@ The signal engine (`smart-endpoint` Edge Function) is a production-grade multi-t
 ## Architecture
 
 ### Edge Function Location
+
 - **Path**: `supabase/functions/smart-endpoint/index.ts`
 - **Type**: Supabase Edge Function (Deno runtime)
 - **Deployment**: Deployed to Supabase Edge Functions network
 
 ### Data Sources
+
 - **FMP Premium API**: Technical indicators (RSI, EMA 20/50/200)
 - **FMP Historical Charts**: OHLCV candle data for ATR and MACD calculations
 - **Supabase Database**: Symbols table (`public.symbols`) as source of truth
@@ -28,28 +30,35 @@ The signal engine (`smart-endpoint` Edge Function) is a production-grade multi-t
 ## Technical Indicators
 
 ### From FMP Premium API
+
 1. **RSI (Relative Strength Index)**
+
    - Period: 14
    - Endpoint: `/stable/technical-indicators/rsi`
    - Used for momentum confirmation
 
 2. **EMA (Exponential Moving Average)**
+
    - Periods: 20, 50, 200
    - Endpoint: `/stable/technical-indicators/ema`
    - Used for trend bias calculation
 
 ### Calculated Locally
+
 3. **MACD (Moving Average Convergence Divergence)**
+
    - Fast: 12, Slow: 26, Signal: 9
    - Calculated from close prices using EMA
    - Used for momentum and trend confirmation
 
 4. **ATR (Average True Range)**
+
    - Period: 14
    - Calculated from OHLC candle data
    - Used for stop loss and target price calculation
 
 5. **Volume Analysis**
+
    - 20-period average volume
    - Used for volume confirmation scoring
 
@@ -58,6 +67,7 @@ The signal engine (`smart-endpoint` Edge Function) is a production-grade multi-t
 Signals are scored 0-100 based on multiple factors:
 
 ### Scoring Breakdown
+
 - **+30 points**: Trend bias (EMA stack alignment)
 - **+20 points**: RSI alignment (momentum conditions)
 - **+20 points**: MACD alignment (crossover confirmation)
@@ -65,12 +75,14 @@ Signals are scored 0-100 based on multiple factors:
 - **+15 points**: Higher timeframe confirmation (multi-TF alignment)
 
 ### Threshold
+
 - **Minimum Score**: 70 (configurable via `SIGNAL_SCORE_THRESHOLD`)
 - Only signals with score ≥ 70 are created/updated
 
 ### Direction Rules
 
 **LONG Setup:**
+
 - EMA stack: `close > EMA20 > EMA50 ≥ EMA200`
 - RSI: `48 < RSI < 65` and `RSI > RSI_prev` (rising momentum)
 - MACD: `MACD > Signal` and `MACD > 0` (bullish crossover)
@@ -78,6 +90,7 @@ Signals are scored 0-100 based on multiple factors:
 - Higher TF: Same direction alignment (if available)
 
 **SHORT Setup:**
+
 - EMA stack: `close < EMA20 < EMA50 ≤ EMA200`
 - RSI: `35 < RSI < 52` and `RSI < RSI_prev` (falling momentum)
 - MACD: `MACD < Signal` and `MACD < 0` (bearish crossover)
@@ -87,11 +100,13 @@ Signals are scored 0-100 based on multiple factors:
 ## Entry, Stop Loss, Target Calculation
 
 ### LONG Signals
+
 - **Entry**: `close * 0.999` (small discount)
 - **Stop Loss**: `entry - (ATR * 1.5)`
 - **Target**: `entry + (ATR * 1.5 * 2.5)` = **1:2.5 Risk:Reward**
 
 ### SHORT Signals
+
 - **Entry**: `close * 1.001` (small premium)
 - **Stop Loss**: `entry + (ATR * 1.5)`
 - **Target**: `entry - (ATR * 1.5 * 2.5)` = **1:2.5 Risk:Reward**
@@ -99,6 +114,7 @@ Signals are scored 0-100 based on multiple factors:
 ## Duplicate Prevention
 
 ### Timeframe-Aware Freshness Windows
+
 - **1min, 5min**: 2 hours
 - **15min**: 8 hours
 - **1h**: 24 hours
@@ -106,17 +122,20 @@ Signals are scored 0-100 based on multiple factors:
 - **1day**: 168 hours (7 days)
 
 ### Update Logic
+
 - If an active signal exists within the freshness window:
   - **Update** if new score > existing score
   - **Skip** if new score ≤ existing score
 
 ### Database Constraints
+
 - Unique index: `(symbol_id, timeframe, direction) WHERE status = 'active'`
 - Prevents duplicate active signals per symbol/timeframe/direction
 
 ## API Contract
 
 ### Request Body (JSON)
+
 ```json
 {
   "source": "cron|manual|debug",
@@ -127,6 +146,7 @@ Signals are scored 0-100 based on multiple factors:
 **Default**: If body is empty or missing, defaults to `["5min", "1h"]`
 
 ### Response
+
 ```json
 {
   "source": "cron",
@@ -146,6 +166,7 @@ Signals are scored 0-100 based on multiple factors:
 Create multiple cron jobs in Supabase Dashboard → Database → Cron Jobs, each calling the same Edge Function with different timeframes:
 
 #### 1. Fast Scalps (1min, 5min)
+
 ```sql
 SELECT cron.schedule(
   'signal-engine-fast-scalps',
@@ -162,6 +183,7 @@ SELECT cron.schedule(
 ```
 
 #### 2. Intraday (15min, 1h)
+
 ```sql
 SELECT cron.schedule(
   'signal-engine-intraday',
@@ -178,6 +200,7 @@ SELECT cron.schedule(
 ```
 
 #### 3. Swing (4h, 1day)
+
 ```sql
 SELECT cron.schedule(
   'signal-engine-swing',
@@ -294,17 +317,20 @@ Adjust these weights based on backtesting results.
 ## Troubleshooting
 
 ### No signals generated
+
 1. Check FMP API key is valid and has premium access
 2. Verify symbols in `public.symbols` have `is_active = true`
 3. Check Edge Function logs for API errors
 4. Ensure sufficient historical data exists for indicators
 
 ### Duplicate signals
+
 - Check unique index exists: `signals_unique_active_per_pair_tf_dir`
 - Verify freshness window logic is working
 - Check for timezone issues in `created_at` comparisons
 
 ### Low signal count
+
 - Lower `SIGNAL_SCORE_THRESHOLD` (e.g., 60) for more signals
 - Adjust scoring weights to be less strict
 - Check if market conditions are unfavorable (low volatility, choppy markets)

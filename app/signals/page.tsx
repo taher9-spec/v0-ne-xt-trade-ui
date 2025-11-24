@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TrendingUp, TrendingDown, ArrowLeft } from "lucide-react"
 import type { Signal } from "@/lib/types"
-import { formatNumber } from "@/types/trades"
+import { formatNumber, parseNumber } from "@/types/trades"
 
 export default function SignalsPage() {
   const [signals, setSignals] = useState<Signal[]>([])
@@ -69,18 +69,168 @@ export default function SignalsPage() {
   const filteredSignals = signals
 
   // Format relative time
-  const formatRelativeTime = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    const diffHours = Math.floor(diffMs / 3600000)
-    const diffDays = Math.floor(diffMs / 86400000)
+  const formatRelativeTime = (dateString: string | null | undefined) => {
+    if (!dateString) return ""
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffMs = now.getTime() - date.getTime()
+      const diffMins = Math.floor(diffMs / 60000)
+      const diffHours = Math.floor(diffMs / 3600000)
+      const diffDays = Math.floor(diffMs / 86400000)
 
-    if (diffMins < 1) return "Just now"
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffHours < 24) return `${diffHours}h ago`
-    return `${diffDays}d ago`
+      if (diffMins < 1) return "Just now"
+      if (diffMins < 60) return `${diffMins}m ago`
+      if (diffHours < 24) return `${diffHours}h ago`
+      if (diffDays < 7) return `${diffDays}d ago`
+      return date.toLocaleDateString()
+    } catch {
+      return ""
+    }
+  }
+
+  // SignalCard component with price tracking
+  const SignalCard = ({ signal }: { signal: Signal }) => {
+    const [currentPrice, setCurrentPrice] = useState<number | null>(null)
+    const [priceChange, setPriceChange] = useState<number | null>(null)
+
+    // Fetch current price for the signal
+    useEffect(() => {
+      const fmpSymbol = signal.symbols?.fmp_symbol || signal.symbol
+      if (!fmpSymbol) return
+
+      const fetchPrice = async () => {
+        try {
+          const res = await fetch(`/api/quote?symbol=${encodeURIComponent(fmpSymbol)}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache" },
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data.price) {
+              const price = parseFloat(String(data.price))
+              setCurrentPrice(price)
+
+              // Calculate % change from entry
+              const entry = signal.entry || signal.entry_price
+              if (entry && entry > 0) {
+                const change = ((price - entry) / entry) * 100
+                setPriceChange(change)
+              }
+            }
+          }
+        } catch (e) {
+          console.error("[v0] Failed to fetch current price:", e)
+        }
+      }
+
+      fetchPrice()
+      // Refresh price every 30 seconds
+      const interval = setInterval(fetchPrice, 30000)
+      return () => clearInterval(interval)
+    }, [signal.symbol, signal.symbols?.fmp_symbol, signal.entry, signal.entry_price])
+
+    const entry = signal.entry || signal.entry_price || 0
+    const stopLoss = signal.sl || signal.stop_loss || 0
+    const target = signal.tp1 || signal.target_price || null
+    const direction = (signal.direction || "").toLowerCase()
+    const timestamp = signal.activated_at || signal.created_at
+
+    return (
+      <Card key={signal.id} className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-lg font-bold">{signal.symbol}</h3>
+              <Badge
+                variant="outline"
+                className={`h-5 text-[10px] ${
+                  direction === "long"
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                    : "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                }`}
+              >
+                {direction === "long" ? (
+                  <TrendingUp className="w-3 h-3 mr-1" />
+                ) : (
+                  <TrendingDown className="w-3 h-3 mr-1" />
+                )}
+                {direction.toUpperCase()}
+              </Badge>
+              {signal.timeframe && (
+                <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
+                  {signal.timeframe}
+                </Badge>
+              )}
+              {signal.status && (
+                <Badge
+                  variant="outline"
+                  className={`h-5 text-[10px] ${
+                    signal.status === "active" || signal.status === "pending"
+                      ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
+                      : signal.status === "hit_tp"
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                      : signal.status === "stopped_out"
+                      ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                      : "border-zinc-700 text-zinc-400"
+                  }`}
+                >
+                  {signal.status === "active" ? "ACTIVE" : signal.status.replace("_", " ").toUpperCase()}
+                </Badge>
+              )}
+            </div>
+            {signal.reason_summary && (
+              <p className="text-xs text-zinc-500 mb-1">{signal.reason_summary}</p>
+            )}
+            {timestamp && (
+              <p className="text-[10px] text-zinc-600">
+                Published {formatRelativeTime(timestamp)}
+              </p>
+            )}
+          </div>
+          <div className="text-right ml-3">
+            {currentPrice !== null && (
+              <>
+                <p className="text-sm font-bold">${formatNumber(currentPrice, 2)}</p>
+                {priceChange !== null && (
+                  <p className={`text-xs font-semibold ${priceChange >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                    {priceChange >= 0 ? "+" : ""}
+                    {formatNumber(priceChange, 2)}%
+                  </p>
+                )}
+              </>
+            )}
+            {signal.signal_score !== null && signal.signal_score !== undefined && (
+              <p className="text-[10px] text-zinc-500 mt-1">Score: {Math.round(signal.signal_score)}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mt-3">
+          <div className="bg-zinc-900 p-2 rounded-lg">
+            <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
+            <p className="text-sm font-bold">{formatNumber(entry, 2)}</p>
+          </div>
+          <div className="bg-zinc-900 p-2 rounded-lg">
+            <p className="text-[10px] text-zinc-500 mb-0.5">Stop Loss</p>
+            <p className="text-sm font-bold text-rose-400">{formatNumber(stopLoss, 2)}</p>
+          </div>
+          <div className="bg-zinc-900 p-2 rounded-lg">
+            <p className="text-[10px] text-zinc-500 mb-0.5">Target</p>
+            <p className="text-sm font-bold text-emerald-400">
+              {target !== null && target !== undefined ? formatNumber(target, 2) : "TBD"}
+            </p>
+          </div>
+        </div>
+
+        {signal.tp2 && (
+          <div className="mt-2 text-xs text-zinc-500">
+            TP2: {formatNumber(signal.tp2, 2)}
+            {signal.tp3 && ` • TP3: ${formatNumber(signal.tp3, 2)}`}
+          </div>
+        )}
+      </Card>
+    )
   }
 
   return (
@@ -176,84 +326,7 @@ export default function SignalsPage() {
         ) : (
           <div className="space-y-3">
             {filteredSignals.map((signal) => (
-              <Card key={signal.id} className="p-4 bg-zinc-950 border-zinc-800 hover:border-zinc-700 transition-colors">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-lg font-bold">{signal.symbol}</h3>
-                      <Badge
-                        variant="outline"
-                        className={`h-5 text-[10px] ${
-                          signal.direction === "long"
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                            : "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                        }`}
-                      >
-                        {signal.direction === "long" ? (
-                          <TrendingUp className="w-3 h-3 mr-1" />
-                        ) : (
-                          <TrendingDown className="w-3 h-3 mr-1" />
-                        )}
-                        {signal.direction.toUpperCase()}
-                      </Badge>
-                      <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
-                        {signal.type}
-                      </Badge>
-                      {signal.timeframe && (
-                        <Badge variant="outline" className="h-5 text-[10px] border-zinc-700 text-zinc-400">
-                          {signal.timeframe}
-                        </Badge>
-                      )}
-                      {signal.status && (
-                        <Badge
-                          variant="outline"
-                          className={`h-5 text-[10px] ${
-                            signal.status === "active" || signal.status === "pending"
-                              ? "border-blue-500/30 bg-blue-500/10 text-blue-400"
-                              : signal.status === "hit_tp"
-                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                              : signal.status === "stopped_out"
-                              ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
-                              : "border-zinc-700 text-zinc-400"
-                          }`}
-                        >
-                          {signal.status.replace("_", " ").toUpperCase()}
-                        </Badge>
-                      )}
-                    </div>
-                    {signal.reason_summary && (
-                      <p className="text-xs text-zinc-500 mb-2">{signal.reason_summary}</p>
-                    )}
-                    <p className="text-xs text-zinc-400">{formatRelativeTime(signal.created_at)}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 mt-3">
-                  <div className="bg-zinc-900 p-2 rounded-lg">
-                    <p className="text-[10px] text-zinc-500 mb-0.5">Entry</p>
-                    <p className="text-sm font-bold">
-                      {formatNumber(signal.entry || signal.entry_price)}
-                    </p>
-                  </div>
-                  <div className="bg-zinc-900 p-2 rounded-lg">
-                    <p className="text-[10px] text-zinc-500 mb-0.5">Stop Loss</p>
-                    <p className="text-sm font-bold text-rose-400">{formatNumber(signal.sl)}</p>
-                  </div>
-                  <div className="bg-zinc-900 p-2 rounded-lg">
-                    <p className="text-[10px] text-zinc-500 mb-0.5">Target</p>
-                    <p className="text-sm font-bold text-emerald-400">
-                      {signal.tp1 !== null && signal.tp1 !== undefined ? formatNumber(signal.tp1) : "TBD"}
-                    </p>
-                  </div>
-                </div>
-
-                {signal.tp2 && (
-                  <div className="mt-2 text-xs text-zinc-500">
-                    TP2: {formatNumber(signal.tp2)}
-                    {signal.tp3 && ` • TP3: ${formatNumber(signal.tp3)}`}
-                  </div>
-                )}
-              </Card>
+              <SignalCard key={signal.id} signal={signal} />
             ))}
           </div>
         )}

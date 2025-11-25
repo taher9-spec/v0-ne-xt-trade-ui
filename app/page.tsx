@@ -463,12 +463,12 @@ export default function NextTradeUI() {
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-zinc-400">
-            {signals.length > 0 ? `Today's Signals: ${signals.length} active` : "Today's Signals"}
+            Active Signals
           </h2>
           {signals.length > 0 && (
             <Link href="/signals?status=active">
               <Badge variant="outline" className="border-zinc-700 text-zinc-400 cursor-pointer hover:border-zinc-600 transition-colors">
-                {loadingSignals ? "..." : signals.length} active
+                {loadingSignals ? "..." : signals.length}
               </Badge>
             </Link>
           )}

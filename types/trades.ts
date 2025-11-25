@@ -45,12 +45,18 @@ export interface TradeStats {
   avgR?: number
 }
 
-// Helper function to safely format numbers
-export function formatNumber(value: number | null | undefined, decimals: number = 2, fallback: string = "-"): string {
-  if (value === null || value === undefined || isNaN(value)) {
+// Helper function to safely format numbers (handles strings from DB)
+export function formatNumber(value: number | string | null | undefined, decimals: number = 2, fallback: string = "-"): string {
+  if (value === null || value === undefined) {
     return fallback
   }
-  return Number(value).toFixed(decimals)
+  const num = typeof value === "string" ? parseFloat(value) : Number(value)
+  if (isNaN(num)) {
+    return fallback
+  }
+  // Remove trailing zeros for cleaner display
+  const formatted = num.toFixed(decimals)
+  return parseFloat(formatted).toString() === formatted ? parseFloat(formatted).toString() : formatted
 }
 
 // Helper function to safely parse number from DB

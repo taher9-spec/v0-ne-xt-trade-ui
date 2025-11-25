@@ -11,10 +11,17 @@ export async function getTodaySignals(limit: number = 50): Promise<Signal[]> {
   try {
     const supabase = createSupabaseClient()
 
-    // Query most recent active signals (all timeframes)
+    // Query most recent active signals (all timeframes) - include all necessary fields
     const { data, error } = await supabase
       .from("signals")
-      .select("*, symbols(fmp_symbol, display_symbol, name, asset_class)")
+      .select(`
+        id, symbol, direction, type, signal_type, market, 
+        entry, sl, tp1, tp2, tp3, target_price, rr, rr_ratio,
+        timeframe, status, score, signal_score, quality_tier, regime,
+        factors, explanation, engine_version,
+        activated_at, created_at, updated_at, closed_at,
+        symbols(fmp_symbol, display_symbol, name, asset_class)
+      `)
       .eq("status", "active")
       .order("activated_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false, nullsFirst: false })

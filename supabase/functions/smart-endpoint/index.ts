@@ -119,11 +119,13 @@ Deno.serve(async (req) => {
           continue
         }
 
+        const now = new Date().toISOString()
         const { error: insErr } = await supabase.from('signals').insert({
           symbol: signal.symbol,
           symbol_id: symData.id,
           direction: signal.direction,
           type: inferSignalType(tf),
+          signal_type: inferSignalType(tf), // Also set signal_type column
           market: config.type,
           entry: signal.entry,
           sl: signal.stop,
@@ -132,14 +134,19 @@ Deno.serve(async (req) => {
           tp3: signal.tp3,
           target_price: signal.target,
           rr: signal.rr,
+          rr_ratio: signal.rr, // Also set rr_ratio
           timeframe: tf,
           status: 'active',
           score: signal.score,
+          signal_score: signal.score, // Also set signal_score
           quality_tier: signal.qualityTier,
           regime: signal.regime,
           factors: signal.factors,
           explanation: signal.explanation,
           engine_version: 'v2.1-edge',
+          activated_at: now, // Set activated_at when signal is created
+          created_at: now,
+          updated_at: now,
         })
 
         if (insErr) {

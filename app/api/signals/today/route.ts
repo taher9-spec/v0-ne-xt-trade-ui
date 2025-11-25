@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
     const userId = cookieStore.get("tg_user_id")?.value
 
     const searchParams = req.nextUrl.searchParams
-    const limit = parseInt(searchParams.get("limit") || "50", 10)
+    // Default to 100 to show more signals, but allow override
+    const limit = parseInt(searchParams.get("limit") || "100", 10)
     const timeframeFilter = searchParams.get("timeframe")
 
     // Fetch latest active signals (frontend handles plan gating)

@@ -6,11 +6,40 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams
     const symbol = searchParams.get("symbol")?.trim().toUpperCase()
 
-    if (!symbol) {
+    if (!symbol || symbol === "" || symbol === "NULL" || symbol === "UNDEFINED") {
       return NextResponse.json({ error: "Symbol parameter is required" }, { status: 400 })
     }
 
-    // Fetch real-time quote from FMP
+    // Try to fetch from live_prices first (faster, no API call)
+    try {
+      const { createClient } = await import("@supabase/supabase-js")
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      
+      if (supabaseUrl && supabaseKey) {
+        const supabase = createClient(supabaseUrl, supabaseKey)
+        const { data: livePrice } = await supabase
+          .from("live_prices")
+          .select("price, change, change_percent, updated_at")
+          .or(`fmp_symbol.eq.${symbol},symbol.eq.${symbol}`)
+          .single()
+        
+        if (livePrice && livePrice.price) {
+          return NextResponse.json({
+            symbol: symbol,
+            price: livePrice.price,
+            change: livePrice.change || 0,
+            changesPercentage: livePrice.change_percent || 0,
+            timestamp: livePrice.updated_at || new Date().toISOString(),
+          })
+        }
+      }
+    } catch (e) {
+      // Fall back to FMP API if live_prices fails
+      console.log("[quote] Live prices not available, using FMP API")
+    }
+
+    // Fetch real-time quote from FMP as fallback
     const quote = await getFmpQuote(symbol)
 
     if (!quote) {

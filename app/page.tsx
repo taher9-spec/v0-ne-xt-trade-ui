@@ -112,7 +112,9 @@ export default function NextTradeUI() {
   const [signals, setSignals] = useState<Signal[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
-  const [signalSortBy, setSignalSortBy] = useState<"recent" | "timeframe" | "confidence">("recent")
+  const [signalSortBy, setSignalSortBy] = useState<"recent" | "timeframe" | "confidence" | "score" | "symbol" | "direction">("recent")
+  const [signalsToShow, setSignalsToShow] = useState(10) // Pagination: show 10 initially
+  const [showTakenSignals, setShowTakenSignals] = useState(true) // Filter taken signals
   const [tradeStats, setTradeStats] = useState<TradeStats>({ total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
   const [loadingSignals, setLoadingSignals] = useState(true)
   const [loadingTrades, setLoadingTrades] = useState(false)
@@ -488,8 +490,8 @@ export default function NextTradeUI() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {/* Sort options */}
-            <div className="flex gap-2 mb-3">
+            {/* Sort and Filter options */}
+            <div className="flex flex-wrap gap-2 mb-3">
               <button
                 onClick={() => setSignalSortBy("recent")}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -499,6 +501,16 @@ export default function NextTradeUI() {
                 }`}
               >
                 Recent
+              </button>
+              <button
+                onClick={() => setSignalSortBy("score")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  signalSortBy === "score"
+                    ? "bg-emerald-500 text-black"
+                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                Score
               </button>
               <button
                 onClick={() => setSignalSortBy("timeframe")}
@@ -511,21 +523,48 @@ export default function NextTradeUI() {
                 Timeframe
               </button>
               <button
-                onClick={() => setSignalSortBy("confidence")}
+                onClick={() => setSignalSortBy("symbol")}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  signalSortBy === "confidence"
+                  signalSortBy === "symbol"
                     ? "bg-emerald-500 text-black"
                     : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
                 }`}
               >
-                Confidence
+                Symbol
+              </button>
+              <button
+                onClick={() => setSignalSortBy("direction")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  signalSortBy === "direction"
+                    ? "bg-emerald-500 text-black"
+                    : "bg-zinc-900 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                Direction
+              </button>
+              <button
+                onClick={() => setShowTakenSignals(!showTakenSignals)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  showTakenSignals
+                    ? "bg-zinc-800 text-zinc-300"
+                    : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                }`}
+              >
+                {showTakenSignals ? "Show All" : "Hide Taken"}
               </button>
             </div>
             
             {(() => {
+              // Filter taken signals if needed
+              let filteredSignals = signals
+              if (!showTakenSignals && user) {
+                const takenSignalIds = new Set(trades.filter(t => t.status === "open").map(t => t.signal_id).filter(Boolean))
+                filteredSignals = signals.filter(s => !takenSignalIds.has(s.id))
+              }
+              
               // Sort signals: unlocked first, then by sort option
               const planCode = user?.plan_code || null
-              const sortedSignals = [...signals].sort((a, b) => {
+              const sortedSignals = [...filteredSignals].sort((a, b) => {
                 const aUnlocked = isSymbolUnlocked(a.symbol, planCode)
                 const bUnlocked = isSymbolUnlocked(b.symbol, planCode)
                 if (aUnlocked !== bUnlocked) {
@@ -537,24 +576,51 @@ export default function NextTradeUI() {
                   const aTime = new Date(a.activated_at || a.created_at || 0).getTime()
                   const bTime = new Date(b.activated_at || b.created_at || 0).getTime()
                   return bTime - aTime // Newest first
+                } else if (signalSortBy === "score") {
+                  const aScore = a.signal_score || a.score || a.confidence || 0
+                  const bScore = b.signal_score || b.score || b.confidence || 0
+                  return bScore - aScore // Highest first
                 } else if (signalSortBy === "timeframe") {
                   const timeframeOrder: Record<string, number> = { '5m': 1, '15m': 2, '1h': 3, '4h': 4, '1d': 5, 'scalp': 1, 'intraday': 3, 'swing': 5 }
                   const aOrder = timeframeOrder[a.timeframe || ''] || 99
                   const bOrder = timeframeOrder[b.timeframe || ''] || 99
                   return aOrder - bOrder
-                } else if (signalSortBy === "confidence") {
-                  const aScore = a.signal_score || a.confidence || 0
-                  const bScore = b.signal_score || b.confidence || 0
-                  return bScore - aScore // Highest first
+                } else if (signalSortBy === "symbol") {
+                  return (a.symbol || "").localeCompare(b.symbol || "")
+                } else if (signalSortBy === "direction") {
+                  return (a.direction || "").localeCompare(b.direction || "")
                 }
                 return 0
               })
               
-              return sortedSignals.map((signal) => (
-                <div key={signal.id} id={`signal-${signal.id}`}>
-                  <SignalCard signal={signal} />
-                </div>
-              ))
+              const displayedSignals = sortedSignals.slice(0, signalsToShow)
+              const hasMore = sortedSignals.length > signalsToShow
+              
+              return (
+                <>
+                  {displayedSignals.map((signal) => (
+                    <div key={signal.id} id={`signal-${signal.id}`}>
+                      <SignalCard signal={signal} />
+                    </div>
+                  ))}
+                  {hasMore && (
+                    <button
+                      onClick={() => setSignalsToShow(signalsToShow + 10)}
+                      className="w-full py-3 rounded-lg bg-zinc-900/50 border border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700 transition-colors text-sm font-medium"
+                    >
+                      Show More ({sortedSignals.length - signalsToShow} remaining)
+                    </button>
+                  )}
+                  {signalsToShow > 10 && (
+                    <button
+                      onClick={() => setSignalsToShow(10)}
+                      className="w-full py-2 rounded-lg bg-zinc-950/50 border border-zinc-800 text-zinc-400 hover:bg-zinc-900 transition-colors text-xs"
+                    >
+                      Show Less
+                    </button>
+                  )}
+                </>
+              )
             })()}
           </div>
         )}
@@ -625,29 +691,29 @@ export default function NextTradeUI() {
       checkExistingTrade()
     }, [user, signal.id, trades.length]) // Include trades.length to re-check when trades update
 
-    // Fetch current price for the signal
+    // Fetch current price from live_prices table (much faster than individual API calls)
     useEffect(() => {
       const fmpSymbol = signal.symbols?.fmp_symbol || signal.symbol
       if (!fmpSymbol) return
 
       const fetchPrice = async () => {
         try {
-          const res = await fetch(`/api/quote?symbol=${encodeURIComponent(fmpSymbol)}`, {
-            cache: "no-store",
-            headers: { "Cache-Control": "no-cache" },
-          })
-          if (res.ok) {
-            const data = await res.json()
-            if (data.price) {
-              const price = parseFloat(String(data.price))
-              setCurrentPrice(price)
-              
-              // Calculate % change from entry
-              const entry = signal.entry || signal.entry_price
-              if (entry && entry > 0) {
-                const change = ((price - entry) / entry) * 100
-                setPriceChange(change)
-              }
+          const supabase = createSupabaseClient()
+          const { data, error } = await supabase
+            .from("live_prices")
+            .select("price, updated_at")
+            .or(`fmp_symbol.eq.${fmpSymbol},symbol.eq.${fmpSymbol}`)
+            .single()
+
+          if (!error && data?.price) {
+            const price = parseFloat(String(data.price))
+            setCurrentPrice(price)
+            
+            // Calculate % change from entry
+            const entry = signal.entry || signal.entry_price
+            if (entry && entry > 0) {
+              const change = ((price - entry) / entry) * 100
+              setPriceChange(change)
             }
           }
         } catch (e) {
@@ -656,8 +722,8 @@ export default function NextTradeUI() {
       }
 
       fetchPrice()
-      // Refresh price every 30 seconds
-      const interval = setInterval(fetchPrice, 30000)
+      // Refresh price every 10 seconds (live_prices updates every 5 seconds)
+      const interval = setInterval(fetchPrice, 10000)
       return () => clearInterval(interval)
     }, [signal.symbol, signal.symbols?.fmp_symbol, signal.entry, signal.entry_price])
 
@@ -756,6 +822,22 @@ export default function NextTradeUI() {
                 console.log("[v0] Refreshed trades after creation:", tradesData.trades?.length || 0, "trades")
                 setTrades(tradesData.trades ?? [])
                 setTradeStats(tradesData.stats ?? { total: 0, wins: 0, losses: 0, open: 0, winRate: 0 })
+                
+                // Auto-scroll to Journal tab to show the new trade
+                setActiveTab("journal")
+                
+                // Scroll to the new trade in journal after a brief delay
+                setTimeout(() => {
+                  const newTradeElement = document.getElementById(`trade-${data.trade.id}`)
+                  if (newTradeElement) {
+                    newTradeElement.scrollIntoView({ behavior: "smooth", block: "center" })
+                    // Highlight briefly
+                    newTradeElement.classList.add("ring-2", "ring-emerald-500", "ring-opacity-50")
+                    setTimeout(() => {
+                      newTradeElement.classList.remove("ring-2", "ring-emerald-500", "ring-opacity-50")
+                    }, 2000)
+                  }
+                }, 300)
               } else {
                 console.error("[v0] Failed to refresh trades:", tradesRes.status)
               }
@@ -2152,7 +2234,7 @@ function TradeCard({ trade, onUpdate }: { trade: any, onUpdate: () => void }) {
   const tfBadgeStyle = getTimeframeBadgeStyle(timeframe)
 
   return (
-    <Card className={`p-2.5 pt-4 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-visible ${
+    <Card id={`trade-${trade.id}`} className={`p-2.5 pt-4 border-zinc-800 hover:border-zinc-700 transition-all duration-300 relative overflow-visible ${
       direction === "long"
         ? "bg-gradient-to-br from-emerald-950/50 via-zinc-950 to-emerald-950/30"
         : "bg-gradient-to-br from-rose-950/50 via-zinc-950 to-rose-950/30"
